@@ -1605,6 +1605,229 @@ System must support:
 ---
 ---
 
+# 🛍🍔 VenuePlus — Retail & F&B Module Specification
+
+---
+
+## 1️⃣ Purpose
+
+The Retail & F&B module enables venues to:
+
+✔ Sell merchandise and food items
+✔ Route kitchen orders correctly
+✔ Apply discounts and wallet payments
+✔ Track stock at a basic level
+✔ Feed sales data into CRM and BI
+
+It is tightly integrated with **POS, Wallets, Memberships, and Reporting**.
+
+---
+
+## 2️⃣ Product Types Covered
+
+| Type                | Examples                   | Operational Impact    |
+| ------------------- | -------------------------- | --------------------- |
+| **Retail Goods**    | Grip socks, T-shirts, toys | Inventory tracked     |
+| **Food Items**      | Pizza, burgers, fries      | Kitchen routing       |
+| **Beverages**       | Soft drinks, coffee        | Fast serve            |
+| **Combos/Meals**    | Kids meal, family combo    | Multi-line order      |
+| **Service Add-ons** | Birthday cake, decoration  | Event-linked optional |
+
+All are **non-time-based products** (no capacity slots).
+
+---
+
+## 3️⃣ Product Configuration
+
+Each product must support:
+
+* Category (Retail / Food / Beverage / Combo)
+* Base price
+* Tax category
+* Active/Inactive status
+* Optional preparation routing (for F&B)
+* Optional inventory tracking
+
+---
+
+## 4️⃣ Variants & Modifiers
+
+Retail and F&B often need selectable options.
+
+### Retail Variants
+
+Examples:
+
+* Size (S/M/L)
+* Color (Red/Blue)
+
+Each variant may:
+
+* Have its own SKU
+* Have its own price
+
+### F&B Modifiers
+
+Examples:
+
+* Extra cheese (+₹20)
+* No onion
+* Drink choice in combo
+
+Modifiers can be:
+
+* Optional
+* Required (must choose one)
+
+---
+
+## 5️⃣ POS Order Flow
+
+Retail & F&B are sold through **POS orders**, not reservations.
+
+### Standard Flow
+
+1. Staff adds items to basket
+2. Modifiers/variants selected
+3. Membership discounts applied (if eligible)
+4. Wallet balances applied per burn rules
+5. Payment completed
+6. Order routed to:
+
+   * Receipt printer
+   * Kitchen (if F&B)
+
+---
+
+## 6️⃣ Kitchen Routing (F&B Only)
+
+Some items require preparation.
+
+### Kitchen Workflow
+
+* Product linked to one or more preparation stations
+* On order completion:
+
+  * Ticket printed at kitchen printer **or**
+  * Sent to Kitchen Display System (KDS)
+* Staff mark item as:
+
+  * Preparing
+  * Ready
+  * Served (optional stage)
+
+This supports multi-station kitchens (e.g., pizza, drinks, desserts).
+
+---
+
+## 7️⃣ Inventory Handling (MVP Level)
+
+Retail items and selected F&B items may have stock tracking.
+
+### Inventory Rules (MVP)
+
+* Stock is reduced when item is sold
+* Staff can manually adjust stock (with reason)
+* System warns when stock falls below threshold
+* Stock does NOT block sale automatically (configurable future)
+
+This is **Level 1 inventory** — simple and operational.
+
+---
+
+## 8️⃣ Combo & Bundle Logic
+
+Combos may include multiple child items:
+
+Example:
+
+* Kids Meal = Burger + Fries + Drink
+
+Operationally:
+
+* POS shows as one item
+* Kitchen receives individual preparation items
+* Inventory deducted per child item
+
+---
+
+## 9️⃣ Integration with Wallets
+
+Wallet rules apply to retail & F&B.
+
+| Balance Type      | Retail           | F&B |
+| ----------------- | ---------------- | --- |
+| Real Cash         | ✅                | ✅   |
+| Bonus Cash        | ✅ (configurable) | ✅   |
+| Game Credits      | ❌                | ❌   |
+| Redemption Points | ✅ (Retail only)  | ❌   |
+
+Burn order logic applies automatically.
+
+---
+
+## 🔟 Integration with Memberships
+
+Membership benefits may apply automatically:
+
+| Benefit Type    | Example                |
+| --------------- | ---------------------- |
+| Discount        | 10% off F&B            |
+| Allowance       | 1 free drink per visit |
+| Retail discount | 15% off merchandise    |
+
+POS must check membership eligibility at checkout.
+
+---
+
+## 1️⃣1️⃣ Refunds & Voids
+
+Retail/F&B refunds must:
+
+* Reverse payment method appropriately
+* Restore stock (if inventory tracked)
+* Log staff action in audit trail
+
+Partial refunds and line-item voids should be supported.
+
+---
+
+## 1️⃣2️⃣ CRM & Behavioral Tracking
+
+Retail & F&B purchases feed into the **Customer 360**:
+
+* Spending patterns
+* Favorite items
+* Average basket size
+* Upsell targeting (e.g., food buyers → combo offers)
+
+---
+
+## 1️⃣3️⃣ Reporting Impact
+
+Retail & F&B contribute to:
+
+* Revenue by category (Food vs Retail)
+* Top-selling products
+* Modifier usage trends
+* Kitchen load by hour
+* Stock variance reports
+
+---
+
+## 1️⃣4️⃣ Event Integration
+
+Retail & F&B may link to events:
+
+| Scenario                  | Behavior                        |
+| ------------------------- | ------------------------------- |
+| Party food package        | Pre-added to event order        |
+| Extra drinks during party | Added to event tab              |
+| Cake add-on               | Routed to kitchen at party time |
+
+---
+---
+
 # 🔐 VenuePlus — Platform Governance Layer
 
 **(Administration, RBAC, Configuration & Control)**
