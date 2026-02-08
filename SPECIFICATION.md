@@ -1,207 +1,131 @@
-# VenuePlus Technical Specification (MVP)
+# VenuePlus Technical Specification (Master Consolidated)
 
-**Version:** 1.1
-**Status:** Approved for Database Design
-**Scope:** Integrated Venue Management System (SaaS)
+**Version:** 1.2
+**Status:** Finalized for Database & API Design
+**Scope:** Integrated Venue Management, Digital Waivers, and Marketing Engine
 
 ---
 
 ## 1. Ticketing & Booking Engine
 
-*The core engine for selling access to the venue.*
+* **Time Logic:**
+* 
+**Fixed Slots:** Pre-defined sessions (e.g., 10:00 AM – 11:00 AM).
 
-### 1.1 Time Logic
 
-* **Dual Support:** System must handle both time models simultaneously.
-* **Fixed Slots:** Pre-defined sessions (e.g., "10:00 AM - 11:00 AM"). Usage: Classes, Escape Rooms.
-* **Rolling Admissions:** Start time is determined at check-in (e.g., "1 Hour starts Now"). Usage: Trampoline Parks, Soft Play.
+* 
+**Rolling Admissions:** Start time triggered at physical check-in (e.g., "1 Hour starts now").
 
 
 
-### 1.2 Capacity & Inventory Architecture
 
-* **Resource-Based Capacity (Level 2):**
-* Decouple **Products** (What is sold) from **Resources** (Physical space).
-* **Resource Types:**
-* *Finite:* Hard limits (e.g., Jump Arena = 50 pax). Stops sales when full.
-* *Open:* Soft limits (e.g., Arcade Floor). Tracked for reporting but never blocks sales.
+* **Capacity Architecture:** Resource-based capacity. Products are decoupled from physical zones (e.g., Jump Arena, Party Room). Finite resources block sales when full; open resources allow unlimited entries.
 
 
+* **Combo Logic:** "Block Everything" strategy. Multi-attraction passes consume one slot from all linked finite resources simultaneously to ensure availability.
 
 
-* **Combo Ticket Logic:** "Block Everything" strategy. A multi-attraction pass consumes 1 slot from *all* linked finite resources simultaneously to guarantee availability.
+* 
+**Pricing Engine:** Single Product with Attributes (e.g., Base "Jump Pass" with "Child" or "Student" modifiers). Supports stackable and exclusive rules for peak/off-peak and promotional pricing.
 
-### 1.3 Pricing Engine
 
-* **Product Structure:** **Single Product with Attributes** (Option B).
-* *Example:* Base Product "Jump Pass" ($20) + Attribute "Child" (Modifier -$5).
 
+## 2. Membership & Group Logic
 
-* **Pricing Stack (Calculation Order):**
-1. **Base Rate:** Default price of the product.
-2. **Calendar Profile:** Overrides base rate for Peak/Off-Peak/Holiday/Weekend.
-3. **Rule Engine:** Automated discounts (Quantity thresholds, Advance Booking windows).
+* **Benefit Structure:** Supports percentage/fixed discounts and recurring monthly "Credit Allowances" (e.g., 5 free jumps per month).
+* 
+**Family/Group Architecture:** Master Account (the payer) manages Sub-Profiles (participants).
 
 
-* **Conflict Resolution:** Rules must have flags for:
-* **Stackable:** Can be combined (e.g., Early Bird + Member Discount).
-* **Exclusive:** Overrides all other discounts (e.g., Black Friday Flash Sale).
+* **Shared Benefit Pools:** Credits belong to the group/family level and can be consumed by any authorized sub-profile.
 
+## 3. POS & Multi-Currency Wallet
 
+* **Unified Basket:** Single checkout flow for Tickets, Memberships, Retail, F&B, and Wallet Loads.
+* **Multi-Currency Wallets:** * **Real Cash:** Refundable balance for general purchases.
+* **Bonus/Promo Cash:** Non-refundable, promotional balance.
+* **Redemption Points:** Restricted currency used only for specific categories (e.g., Arcade prizes). **Note:** Redemption deductions do not trigger the generation of entry tickets.
 
----
 
-## 2. Membership Engine
+* **Burn Order:** Configurable at the venue level (e.g., "Consume Bonus Cash before Real Cash").
 
-*The retention and recurring revenue system.*
+## 4. Integrated Waiver System
 
-### 2.1 Benefit Logic
+* **Native Integration:** Waivers are a core module of VenuePlus, not an external system. Signing is directly linked to customer profiles and tickets.
 
-* **Hybrid Model (A + B):**
-* **Discounts:** Percentage or Fixed Amount off specific Product Categories (e.g., "20% off F&B").
-* **Allowances (Credits):** Monthly recurring balance of "Credits" (e.g., "5 Credits/Month").
-* *Consumption:* Credits can be applied to Bookable Resources (1 Hour Jump) or Walk-in "Day Passes."
 
+* **Legal Validity & Integrity:**
+* 
+**PDF Snapshots:** Every signing event generates an immutable PDF containing the exact text signed.
 
 
-### 2.2 Family & Relationship Architecture
+* 
+**Digital Fingerprinting:** PDFs are hashed (SHA-256) to prove non-tampering.
 
-* **Structure:** **Master Account + Sub-Profiles (Group/Family).**
-* **Role Logic:**
-* **Master:** The Payer/Owner. Can also be a "Participant" (consume benefits).
-* **Members:** Sub-profiles (e.g., children) linked to the Master.
 
+* 
+**Metadata:** Capture IP address, device user-agent, and millisecond-accurate timestamps.
 
-* **Quota Logic:** **Shared Pools.** Allowances (e.g., "10 Credits") belong to the *Group* and can be consumed by the Master or any authorized Sub-Profile.
 
-### 2.3 Billing
 
-* **Supported Types:**
-* **Prepaid Term:** Upfront payment for fixed duration (e.g., Annual Pass).
-* **Recurring Subscription:** Auto-renewal (e.g., Monthly) via tokenized payment.
 
+* 
+**Relationship Model:** Support for one Adult/Guardian signing for multiple Minors/Dependents.
 
 
----
+* 
+**Configurable Security:** Venue-level setting to enable or disable **OTP verification** (Phone/Email) prior to signing or viewing waivers.
 
-## 3. POS & Wallet (Cashiering)
 
-*The unified point of sale and financial transaction center.*
 
-### 3.1 Checkout Experience
+## 5. Inventory, Merchandise & F&B
 
-* **Unified Basket:** Must process Tickets (Time-based), Memberships (Contracts), Retail (Physical), F&B (Consumable), and Wallet Loads in a single transaction.
-* **Payment Methods:** Cash, Credit/Debit, Split Payment, and **Venue Wallet**.
+* 
+**Merchandise Matrix:** Supports variants (Size, Color, Material) linked to unique Physical SKUs.
 
-### 3.2 Digital Wallet / Cash Card
 
-* **Architecture:** **Hybrid Wallet.**
-* *Real Cash:* Refundable liability.
-* *Bonus Cash:* Promotional/Non-refundable.
+* 
+**Kitchen & Bar Routing:** Orders are automatically routed to specific **Preparation Stations** based on product category (e.g., Hot Food to Kitchen, Drinks to Bar).
 
 
-* **Logic:** System consumes Bonus Cash first (configurable) or based on venue accounting rules.
-* **Functions:** Issue Card (RFID/QR), Load Funds, Spend Funds.
-* **Scope Note:** Arcade hardware integration is *out of scope* for MVP.
+* **Level 1 Stock Tracking:** Simple "Sold = Deducted" logic without ingredient-level recipe management.
 
----
+## 6. Advanced CRM & Marketing
 
-## 4. Integrated Waiver Management
+* 
+**Customer 360:** Centralized profile tracking visit history, spend, waiver status, and staff notes.
 
-*Native legal compliance module (replaces external WSR system).*
 
-### 4.1 Legal Validity Engine
+* **Dynamic Segmentation:** Automated grouping based on behavior rules:
+* *Churn Risk:* (Last visit > 60 days).
+* *VIP:* (Lifetime spend > $500).
 
-* **Content Integrity:** System must generate an immutable **PDF Snapshot** at the moment of signing.
-* **Security:** PDF must be hashed to prove non-tampering.
-* **Metadata Capture:** Record IP Address, Device User-Agent, and Timestamp (ms) for every signature.
-* **Identity Verification:**
-* **Configurable OTP:** Venue-level setting. (Enable/Disable OTP verification via SMS/Email before signing).
 
+* **Marketing Automations:** "Trigger-Wait-Action" workflows. (e.g., If "Ticket Scanned," Wait "2 Hours," Send "Review Request SMS").
+* **Attribution:** Tracks revenue generated by specific marketing campaigns via link-tracking and unique promo codes.
 
+## 7. Access Control (The Gatekeeper)
 
-### 4.2 Relationship Model
+* 
+**Strict Validation:** The system denies entry if a ticket is valid but no active waiver is linked to the participant.
 
-* **Entities:**
-* **Signer:** The Adult/Guardian (Legal capability to sign).
-* **Subject:** The Minor/Participant (The person exposed to risk).
 
+* 
+**Hardware Integration:** API-level support for turnstiles ("Pulse to Open") and handheld scanning devices.
 
-* **Workflow:** One-to-Many. A single signing event by a Guardian can cover multiple Subjects (Minors).
 
-### 4.3 Integration Points
+* **Occupancy Tracking:** Real-time headcount monitoring based on Entry/Exit scans at specific Access Points.
 
-* **Kiosk Mode:** Public-facing URL for walk-ins to sign *before* transaction. Creates a "Pre-Booking" record.
-* **POS Trigger:** Instant lookup by Name/Phone. If waiver missing, POS prompts to send link or sign on tablet.
+## 8. Admin, Roles & Reporting
 
----
+* 
+**RBAC (Role-Based Access Control):** Granular permissions (e.g., `sales.refund`, `waiver.admin`) assigned to roles and scoped to specific venues.
 
-## 5. Access Control (The Gate)
 
-*Validation and entry management.*
+* 
+**Audit Logging:** Immutable records of sensitive staff actions (refunds, voids, manual stock adjustments).
 
-### 5.1 Interface Support
 
-* **Staff App:** Handheld device view for manual scanning and exception handling.
-* **Turnstile API:** Standard signal protocol ("Pulse to Open") for automated gates.
-
-### 5.2 Validation Logic
-
-* **Strict Mode:** Gate strictly denies entry if no valid waiver is linked to the ticket holder, regardless of ticket validity.
-* **Re-Entry Rules:** Configurable at the **Product Level**.
-* *Single Entry:* Ticket burned on first scan.
-* *Unlimited:* Valid until session timer expires.
-
-
-
----
-
-## 6. Inventory & F&B
-
-*Back-of-house stock management.*
-
-### 6.1 Stock Tracking
-
-* **Complexity:** **Level 1 (Item Tracking).** 1 Unit Sold = 1 Unit Deducted. (No ingredient-level recipe tracking).
-* **Variants:** Support for Product Matrices (Size/Color/Style) for retail items.
-
-### 6.2 Kitchen Operations
-
-* **Routing:** POS "Routing Table" sends items to specific destinations (Drinks  Bar; Food  Kitchen).
-* **Output:** Support **Both** Kitchen Printers and KDS (Kitchen Display Systems).
-
----
-
-## 7. Admin & Configuration
-
-*System configuration and user management.*
-
-### 7.1 Venue Settings
-
-* Global configs: Operating Hours (Standard + Holiday), Tax Rules, Currency.
-* **Waiver Config:** Rich-text editor for legal text, Validity Period (e.g., 365 days), Minors Age Limit (e.g., <18).
-
-### 7.2 Security (RBAC)
-
-* **Role-Based Access Control:**
-* *Super Admin:* Full Access.
-* *Manager:* Ops + Refunds.
-* *Cashier:* Sales + Check-in (No Refunds).
-* *Kitchen:* View Only.
-
-
-* **Audit Log:** Immutable record of sensitive actions (Refunds, Overrides, Discounts > Limit).
-
----
-
-## 8. Reporting & Analytics
-
-*Data visualization and business intelligence.*
-
-### 8.1 Dashboard Views
-
-* **Real-Time Ops:** Live occupancy (Resources), Incoming bookings, Waiver compliance status.
-* **Daily Financials (Closeout):** Revenue by Category, Payment Methods (Cash vs. Liability), Discounts, Voids/Refunds.
-* **Strategic Analytics:** Customer LTV, Retention Rates, Heatmaps (Peak times), Membership Churn.
+* **Performance Dashboards:** Pre-calculated "Roll-up" tables for instant reporting on Daily Revenue, Hourly Occupancy, and Marketing ROI.
 
 ---
