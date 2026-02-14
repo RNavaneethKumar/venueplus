@@ -5,44 +5,473 @@
 
 ---
 
-## 1. Core Ticketing & Resource Engine
+## 1. 🎟 Ticketing & Resource Management
 
-This module manages the physical constraints of the venue and the logic of time-based access.
+## 🧭 A. Admission Models
 
-### 1.1 Time-Slot Management
+---
 
-* **Fixed Sessions**
-  Hard-coded intervals (e.g., `10:00 - 11:00`). Used for classes and capacity-heavy attractions.
+### 1️⃣ Fixed Session Booking
 
-* **Rolling Admissions**
-  “Clock starts at the gate.” Logic calculates validity from the moment of first successful scan.
+Examples:
 
-### 1.2 Resource-Based Capacity Architecture
+* Laser tag game: 10:00–10:30
+* Escape room: 2:00–3:00 PM
+* Trampoline fitness class
 
-* **Finite Resources**
-  Physical zones with strict limits (e.g., *Jump Arena = 50 pax*).
-  The system must block sales across all platforms once the limit is reached.
+System Requirements:
 
-* **Open Resources**
-  Zones with soft limits (e.g., *Arcade floor*).
-  Tracked for occupancy reporting but do **not** restrict ticket sales.
+* Predefined start/end time
+* Limited capacity per session
+* Entry allowed only within session window
+* Reservation consumes capacity at purchase
+* Late entry policy configurable
 
-### 1.3 Combo & Bundle Logic
+---
 
-* **“Block Everything” Strategy**
-  For multi-attraction passes, the system performs a real-time availability check on **all linked finite resources**.
-  If any one resource is at capacity, the entire combo product is marked **Sold Out**.
+### 2️⃣ Rolling Admission — **Open Capacity**
 
-### 1.4 Dynamic Pricing Engine
+Examples:
 
-* **Attribute Modifiers**
-  Base products (e.g., *General Admission*) use modifiers for *Adult*, *Child*, or *Senior* rather than creating separate products.
+* Indoor play zone
+* Arcade free play
+* Museum access
 
-* **Rule Priority**
-  Logic must resolve conflicts between:
+System Requirements:
 
-  * Peak / Off-Peak pricing profiles
-  * Bulk / Advance purchase discounts
+* Duration-based validity (e.g., 60 mins)
+* Validity starts on first scan
+* Capacity optionally tracked (soft capacity)
+* Does NOT block purchase when full
+* Used for reporting only
+
+---
+
+### 3️⃣ Rolling Admission — **Fixed Capacity** ✅ (Key Decision)
+
+Examples:
+
+* 1-Hour Jump Pass (Arena Capacity = 50)
+* Soft Play Area (Max 40 kids)
+
+#### Core Problem:
+
+System does not know when users will exit.
+
+#### Adopted Solution:
+
+Use **Rolling Window Capacity Commitment**.
+
+At time of purchase:
+
+System assumes user will occupy:
+
+```
+purchase_time → purchase_time + duration
+```
+
+Example:
+
+Customer buys at 2:00 PM (60 min pass):
+
+Capacity commitment = 2:00 → 3:00 PM
+
+---
+
+### Purchase-Time Behavior:
+
+System checks:
+
+```
+Active reservations +
+Future commitments overlapping that window
+```
+
+If:
+
+```
+occupancy < capacity → allow sale
+else → block sale
+```
+
+Customer is informed:
+
+> “Next available entry: 2:30 PM”
+
+Based on earliest future window where capacity is available.
+
+---
+
+### Scan-Time Behavior:
+
+Gate:
+
+* Validates reservation
+* Validates waiver
+* DOES NOT re-check capacity
+
+Capacity is committed at purchase.
+
+---
+
+### 4️⃣ All-Day / Open Entry
+
+Examples:
+
+* Theme park entry
+* Water park
+* Museum day pass
+
+System Requirements:
+
+* Valid entire day
+* Multiple entries allowed (optional)
+* Capacity tracked optionally (soft)
+* Does not restrict sale
+
+---
+
+### 5️⃣ Multi-Day Pass
+
+Examples:
+
+* 3-day ski pass
+* Weekend pass
+* Camp access
+
+System Requirements:
+
+* Valid across multiple days
+* One-entry-per-day or unlimited (configurable)
+
+---
+
+---
+
+## 🧍 B. Visitor Assignment Model
+
+---
+
+### 6️⃣ Anonymous Purchase (Common Case)
+
+Example:
+
+Parent buys:
+
+* 3 child tickets
+
+System stores:
+
+| Reservation | Visitor Type | Assigned Person |
+| ----------- | ------------ | --------------- |
+| R1          | child        | NULL            |
+| R2          | child        | NULL            |
+| R3          | child        | NULL            |
+
+Only:
+
+* Quantity
+* Visitor type
+* Slot
+
+are known at purchase.
+
+---
+
+### 7️⃣ Named Assignment Later
+
+Before visit:
+
+Parent:
+
+* Creates child profiles
+* Assigns reservations
+* Signs waiver
+
+| Reservation | Person  |
+| ----------- | ------- |
+| R1          | Child A |
+| R2          | Child B |
+| R3          | Child C |
+
+Gate validates:
+
+```
+reservation.assigned_person_id
+→ waiver exists?
+```
+
+---
+
+---
+
+## ✍️ C. Waiver Model (Minors)
+
+---
+
+### At Purchase:
+
+Parent signs:
+
+> Signing on behalf of 3 minors
+
+System captures:
+
+* Signer (guardian)
+* Covered capacity = 3 minors
+
+Names NOT required at this stage.
+
+---
+
+### Before Entry:
+
+Each reservation must be assigned:
+
+* A person
+* A valid waiver
+
+Entry is denied if:
+
+* Reservation assigned
+* But waiver missing
+
+---
+
+---
+
+## 🧮 D. Capacity Behavior
+
+---
+
+### 8️⃣ Hard Capacity Resources
+
+Examples:
+
+* Jump Arena
+* Laser Tag Room
+* Escape Room
+
+System:
+
+* Blocks sale when capacity full
+* Reservations consume capacity
+* Capacity NOT restored on no-show
+
+---
+
+### 9️⃣ Soft Capacity Resources
+
+Examples:
+
+* Arcade floor
+* Museum
+
+System:
+
+* Tracks occupancy
+* Does not restrict purchase
+
+---
+
+### 🔟 Cross-Resource Bundles
+
+Examples:
+
+* Jump + Ninja Course
+* Laser Tag + Bowling
+
+System:
+
+* Must check availability across ALL resources
+* If any full → bundle unavailable
+
+---
+
+---
+
+## 🚪 E. Entry Behavior
+
+---
+
+### 1️⃣1️⃣ Single Entry
+
+Examples:
+
+* Laser tag session
+
+---
+
+### 1️⃣2️⃣ Multiple Entry Allowed
+
+Examples:
+
+* Museum ticket
+* Water park pass
+
+---
+
+### 1️⃣3️⃣ Time-Limited Entry
+
+Examples:
+
+* 1-hour jump pass
+
+First scan:
+
+```
+starts validity timer
+```
+
+Subsequent scans:
+
+```
+check expiry
+```
+
+---
+
+---
+
+## 🎉 F. Group / Event Integration
+
+---
+
+### 1️⃣4️⃣ Group Reservations
+
+Examples:
+
+* Birthday party
+
+System:
+
+* Reserves multiple spots together
+* Linked to event
+* Capacity consumed upfront
+
+---
+
+---
+
+## 🔄 G. Modification Rules
+
+---
+
+### 1️⃣5️⃣ Rebooking
+
+Example:
+
+Move from 2 PM → 4 PM
+
+System:
+
+* Moves reservation
+* Capacity adjusted
+
+---
+
+### 1️⃣6️⃣ Partial Cancellation
+
+Example:
+
+5 tickets booked → 1 canceled
+
+System:
+
+* Cancels reservation
+* Capacity remains lost (no-show policy)
+
+---
+
+---
+
+## 💰 H. Pricing Scenarios
+
+---
+
+### Visitor Type Pricing
+
+* Adult
+* Child
+* Senior
+* Member
+
+---
+
+### Quantity-Based Pricing
+
+Bulk pricing slabs
+
+---
+
+### Promotional Offers
+
+* B2G1
+* Buy X Get Y
+* Bundle discount
+
+---
+
+### Time-Based Pricing
+
+* Early Bird
+* Advance booking
+
+---
+
+### Peak / Off-Peak
+
+* Weekend pricing
+* Holiday pricing
+
+---
+
+### Channel-Based Pricing
+
+* Online vs Walk-in
+
+---
+
+### Membership-Based
+
+* Discount
+* Allowance
+
+---
+
+### Promo Codes
+
+* Flat / %
+* Product scoped
+
+---
+
+### Manual Override
+
+* POS only
+* Audit logged
+* Supervisor approval
+
+---
+
+### Pricing Evaluation Order
+
+```
+1. Base Product Price
+2. Time-Based Pricing
+3. Quantity-Based Pricing
+4. Bundle / BOGO
+5. Early Bird / Advance
+6. Membership
+7. Promo Code
+8. Manual Override
+```
+
+Each rule:
+
+```
+stackable = true / false
+```
 
 ---
 
