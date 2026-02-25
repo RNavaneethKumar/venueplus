@@ -1,104 +1,358 @@
-## 🧱 Table: `users`
+# 📘 VenuePlus
 
-| Field                     | Type          | Required        | Description                          |
-| ------------------------- | ------------- | --------------- | ------------------------------------ |
-| **id**                    | UUID          | ✅               | Unique internal user ID              |
-| **username**              | text (unique) | ✅               | Login name (used at POS/gate/admin)  |
-| **pin_hash**              | text          | ✅               | Secure hash of numeric PIN           |
-| **display_name**          | text          | ✅               | Name shown in UI and receipts        |
-| **email**                 | text          | ❌               | Optional, mainly for managers/HQ     |
-| **phone**                 | text          | ❌               | Optional future contact/OTP use      |
-| **status**                | enum          | ✅               | active / suspended / disabled        |
-| **last_login_at**         | timestamptz   | ❌               | Last successful login                |
-| **failed_login_attempts** | int           | ✅ default 0     | Security tracking                    |
-| **locked_until**          | timestamptz   | ❌               | Temporary lock after failed attempts |
-| **is_system_user**        | boolean       | ✅ default false | For automated/system actions         |
-| **created_at**            | timestamptz   | ✅               | When user was created                |
-| **created_by**            | FK → users.id | ❌               | Who created this user                |
+## Platform Governance – Database Design
+
+*(Per-Customer Database Model)*
 
 ---
 
-## 🧱 Table: `roles`
+# 1. Users
 
-| Field           | Type          | Required       | Description                              |
-| --------------- | ------------- | -------------- | ---------------------------------------- |
-| **id**          | UUID          | ✅              | Unique role ID                           |
-| **name**        | text (unique) | ✅              | Role name (e.g., “Cashier”)              |
-| **description** | text          | ❌              | Human-readable explanation               |
-| **scope_type**  | enum          | ✅              | `venue` or `global`                      |
-| **is_active**   | boolean       | ✅ default true | Allows role deprecation without deletion |
-| **created_at**  | timestamptz   | ✅              | Creation time                            |
+## `users`
 
----
+Represents internal staff accounts across venues.
 
-## 🧱 Table: `permissions`
+Users authenticate using:
 
-| Field            | Type          | Required        | Description                                |
-| ---------------- | ------------- | --------------- | ------------------------------------------ |
-| **id**           | UUID          | ✅               | Unique permission ID                       |
-| **key**          | text (unique) | ✅               | Machine-readable identifier, module.action |
-| **description**  | text          | ❌               | Human-readable explanation                 |
-| **module**       | text          | ✅               | System area this belongs to                |
-| **is_sensitive** | boolean       | ✅ default false | Marks high-risk actions, for override check|
-| **created_at**   | timestamptz   | ✅               | Creation time                              |
+```
+username + numeric PIN
+```
 
----
+Users are shared across venues and assigned roles via `user_roles`.
 
-## 🧱 Table: `role_permissions`
-
-| Field             | Type                | Required       | Description                |
-| ----------------- | ------------------- | -------------- | -------------------------- |
-| **role_id**       | FK → roles.id       | ✅              | Which role                 |
-| **permission_id** | FK → permissions.id | ✅              | Which permission           |
-| **granted**       | boolean             | ✅ default true | Allows future flexibility  |
-| **created_at**    | timestamptz         | ✅              | When this link was created |
-
-**Primary Key:** `(role_id, permission_id)`
+| Column        | Type               | Required        | Description          |
+| ------------- | ------------------ | --------------- | -------------------- |
+| id            | UUID (PK)          | ✅               | Unique user ID       |
+| username      | TEXT (UNIQUE)      | ✅               | Login username       |
+| display_name  | TEXT               | ✅               | Staff display name   |
+| pin_hash      | TEXT               | ✅               | Hashed numeric PIN   |
+| mobile_number | TEXT               | ❌               | Optional contact     |
+| email         | TEXT               | ❌               | Optional             |
+| is_active     | BOOLEAN            | ✅ default true  | Active user          |
+| is_locked     | BOOLEAN            | ✅ default false | Locked after retries |
+| last_login_at | TIMESTAMPTZ        | ❌               | Last login           |
+| created_at    | TIMESTAMPTZ        | ✅               | Created timestamp    |
+| created_by    | UUID FK → users.id | ❌               | Who created          |
 
 ---
 
-## 🧱 Table: `user_roles`
+# 2. Roles
 
-| Field           | Type           | Required       | Description                      |
-| --------------- | -------------- | -------------- | -------------------------------- |
-| **id**          | UUID           | ✅              | Unique row ID                    |
-| **user_id**     | FK → users.id  | ✅              | Which user                       |
-| **role_id**     | FK → roles.id  | ✅              | Which role                       |
-| **venue_id**    | FK → venues.id | ❌ (nullable)   | Which venue this applies to      |
-| **assigned_at** | timestamptz    | ✅              | When role was assigned           |
-| **assigned_by** | FK → users.id  | ❌              | Who granted this role            |
-| **is_active**   | boolean        | ✅ default true | Allows revoking without deletion |
+## `roles`
 
----
+System-defined job roles.
+Venues cannot create custom roles.
 
-## 🧱 Table: `venues`
-
-| Field                       | Purpose                    | Example (India)      |
-| --------------------------- | -------------------------- | -------------------- |
-| **id**                      | Venue ID                   | VENUE_01             |
-| **name**                    | Business name              | JumpWorld Bangalore  |
-| **legal_name**              | Legal entity name          | JumpWorld Pvt Ltd    |
-| **timezone**                | Local time operations      | Asia/Kolkata         |
-| **currency_code**           | Default currency           | INR                  |
-| **country_code**            | Country of operation       | IN                   |
-| **tax_regime**              | Type of tax system         | GST / VAT / SalesTax |
-| **tax_registration_number** | Official tax ID            | GSTIN                |
-| **registered_address**      | Legal address for invoices | Full postal address  |
-| **status**                  | Operational status         | active               |
+| Column      | Type                   | Required       | Description |
+| ----------- | ---------------------- | -------------- | ----------- |
+| id          | UUID (PK)              | ✅              | Role ID     |
+| name        | TEXT (UNIQUE)          | ✅              | Role name   |
+| description | TEXT                   | ❌              | Description |
+| scope_type  | ENUM('venue','global') | ✅              | Role scope  |
+| is_active   | BOOLEAN                | ✅ default true | Active      |
+| created_at  | TIMESTAMPTZ            | ✅              | Created     |
 
 ---
 
-## 🧱 Table: `venue_settings`
+# 3. Permissions
 
-| Field             | Type           | Required | Description                 |
-| ----------------- | -------------- | -------- | --------------------------- |
-| **id**            | UUID           | ✅        | Unique row ID               |
-| **venue_id**      | FK → venues.id | ✅        | Which venue this applies to |
-| **setting_key**   | text           | ✅        | Unique config identifier    |
-| **setting_value** | jsonb          | ✅        | Value (flexible format)     |
-| **updated_at**    | timestamptz    | ✅        | Last change time            |
-| **updated_by**    | FK → users.id  | ❌        | Who changed it              |
+## `permissions`
 
-**Unique constraint:** `(venue_id, setting_key)`
+Atomic actions in system.
+
+| Column       | Type          | Required        | Description         |
+| ------------ | ------------- | --------------- | ------------------- |
+| id           | UUID (PK)     | ✅               | Permission ID       |
+| key          | TEXT (UNIQUE) | ✅               | e.g order.refund    |
+| module       | TEXT          | ✅               | pos / ticketing etc |
+| description  | TEXT          | ❌               | Description         |
+| is_sensitive | BOOLEAN       | ✅ default false | Needs override      |
+| created_at   | TIMESTAMPTZ   | ✅               | Created             |
 
 ---
+
+# 4. Role Permissions
+
+## `role_permissions`
+
+Mapping between roles and permissions.
+
+| Column        | Type                     | Required       | Description |
+| ------------- | ------------------------ | -------------- | ----------- |
+| role_id       | UUID FK → roles.id       | ✅              | Role        |
+| permission_id | UUID FK → permissions.id | ✅              | Permission  |
+| granted       | BOOLEAN                  | ✅ default true | Active      |
+| created_at    | TIMESTAMPTZ              | ✅              | Created     |
+
+PK:
+
+```
+(role_id, permission_id)
+```
+
+---
+
+# 5. User Roles
+
+## `user_roles`
+
+Assigns roles to users per venue.
+
+| Column      | Type                | Required        | Description |
+| ----------- | ------------------- | --------------- | ----------- |
+| id          | UUID (PK)           | ✅               | Row ID      |
+| user_id     | UUID FK → users.id  | ✅               | User        |
+| role_id     | UUID FK → roles.id  | ✅               | Role        |
+| venue_id    | UUID FK → venues.id | ❌ NULL = global |             |
+| assigned_at | TIMESTAMPTZ         | ✅               | Assigned    |
+| assigned_by | UUID FK → users.id  | ❌               | Assigned by |
+| is_active   | BOOLEAN             | ✅ default true  | Active      |
+
+---
+
+# 6. Venues
+
+## `venues`
+
+Represents a physical operating location.
+
+| Column                  | Type                               | Required | Description      |
+| ----------------------- | ---------------------------------- | -------- | ---------------- |
+| id                      | UUID (PK)                          | ✅        | Venue ID         |
+| name                    | TEXT                               | ✅        | Venue name       |
+| legal_name              | TEXT                               | ❌        | Legal entity     |
+| timezone                | TEXT                               | ✅        | e.g Asia/Kolkata |
+| currency_code           | TEXT                               | ✅        | INR              |
+| country_code            | TEXT                               | ✅        | IN               |
+| tax_regime              | TEXT                               | ❌        | GST/VAT          |
+| tax_registration_number | TEXT                               | ❌        | GSTIN            |
+| registered_address      | TEXT                               | ❌        | Address          |
+| status                  | ENUM('active','inactive','closed') | ✅        | Status           |
+| created_at              | TIMESTAMPTZ                        | ✅        | Created          |
+| created_by              | UUID FK → users.id                 | ❌        | Creator          |
+
+---
+
+# 7. Venue Settings
+
+## `venue_settings`
+
+Configurable business rules per venue.
+
+| Column        | Type                | Required | Description |
+| ------------- | ------------------- | -------- | ----------- |
+| id            | UUID (PK)           | ✅        | Row ID      |
+| venue_id      | UUID FK → venues.id | ✅        | Venue       |
+| setting_key   | TEXT                | ✅        | Config key  |
+| setting_value | JSONB               | ✅        | Value       |
+| updated_at    | TIMESTAMPTZ         | ✅        | Updated     |
+| updated_by    | UUID FK → users.id  | ❌        | Who updated |
+
+UNIQUE:
+
+```
+(venue_id, setting_key)
+```
+
+---
+
+# 8. Venue Feature Flags
+
+## `venue_feature_flags`
+
+Enable/disable modules per venue.
+
+| Column      | Type                | Required | Description      |
+| ----------- | ------------------- | -------- | ---------------- |
+| id          | UUID (PK)           | ✅        | Row ID           |
+| venue_id    | UUID FK → venues.id | ✅        | Venue            |
+| feature_key | TEXT                | ✅        | module.ticketing |
+| is_enabled  | BOOLEAN             | ✅        | Enabled          |
+| enabled_at  | TIMESTAMPTZ         | ❌        | Enabled          |
+| disabled_at | TIMESTAMPTZ         | ❌        | Disabled         |
+| updated_by  | UUID FK → users.id  | ❌        | Who updated      |
+
+UNIQUE:
+
+```
+(venue_id, feature_key)
+```
+
+---
+
+# 9. Devices
+
+## `devices`
+
+Hardware endpoints.
+
+| Column            | Type                                             | Required | Description   |
+| ----------------- | ------------------------------------------------ | -------- | ------------- |
+| id                | UUID (PK)                                        | ✅        | Device ID     |
+| venue_id          | UUID FK → venues.id                              | ✅        | Venue         |
+| name              | TEXT                                             | ✅        | Friendly name |
+| device_type       | ENUM('pos','gate','kiosk','kds','arcade_reader') | ✅        | Type          |
+| identifier        | TEXT                                             | ❌        | MAC/Serial    |
+| auth_token_hash   | TEXT                                             | ❌        | Device auth   |
+| status            | ENUM('active','inactive','maintenance')          | ✅        | Status        |
+| last_heartbeat_at | TIMESTAMPTZ                                      | ❌        | Last ping     |
+| last_ip_address   | TEXT                                             | ❌        | IP            |
+| created_at        | TIMESTAMPTZ                                      | ✅        | Created       |
+| created_by        | UUID FK → users.id                               | ❌        | Creator       |
+
+---
+
+# 10. Device Resource Mapping
+
+## `device_resource_mapping`
+
+Controls which devices can access which resources.
+
+| Column         | Type                   | Required        | Description |
+| -------------- | ---------------------- | --------------- | ----------- |
+| id             | UUID (PK)              | ✅               | Row ID      |
+| device_id      | UUID FK → devices.id   | ✅               | Device      |
+| resource_id    | UUID FK → resources.id | ✅               | Resource    |
+| is_entry_point | BOOLEAN                | ✅ default true  | Entry       |
+| is_exit_point  | BOOLEAN                | ✅ default false | Exit        |
+| created_at     | TIMESTAMPTZ            | ✅               | Created     |
+| created_by     | UUID FK → users.id     | ❌               | Creator     |
+
+UNIQUE:
+
+```
+(device_id, resource_id)
+```
+
+---
+
+# 11. Notification Templates
+
+## `notification_templates`
+
+Email/SMS/WhatsApp templates.
+
+| Column       | Type                           | Required       | Description          |
+| ------------ | ------------------------------ | -------------- | -------------------- |
+| id           | UUID (PK)                      | ✅              | Template ID          |
+| venue_id     | UUID FK → venues.id            | ❌ NULL=default |                      |
+| channel      | ENUM('email','sms','whatsapp') | ✅              | Channel              |
+| template_key | TEXT                           | ✅              | booking.confirmation |
+| subject      | TEXT                           | ❌              | Email subject        |
+| body         | TEXT                           | ✅              | Template             |
+| is_active    | BOOLEAN                        | ✅              | Active               |
+| created_at   | TIMESTAMPTZ                    | ✅              | Created              |
+| updated_at   | TIMESTAMPTZ                    | ✅              | Updated              |
+| updated_by   | UUID FK → users.id             | ❌              | Editor               |
+
+---
+
+# 12. API Keys
+
+## `api_keys`
+
+External system access.
+
+| Column             | Type                               | Required      | Description |
+| ------------------ | ---------------------------------- | ------------- | ----------- |
+| id                 | UUID (PK)                          | ✅             | Key ID      |
+| venue_id           | UUID FK → venues.id                | ❌ NULL=global |             |
+| name               | TEXT                               | ✅             | Friendly    |
+| key_hash           | TEXT                               | ✅             | Stored hash |
+| scopes             | JSONB                              | ✅             | Permissions |
+| rate_limit_per_min | INT                                | ❌             | Limit       |
+| status             | ENUM('active','revoked','expired') | ✅             | Status      |
+| expires_at         | TIMESTAMPTZ                        | ❌             | Expiry      |
+| last_used_at       | TIMESTAMPTZ                        | ❌             | Last used   |
+| created_at         | TIMESTAMPTZ                        | ✅             | Created     |
+| created_by         | UUID FK → users.id                 | ❌             | Creator     |
+
+---
+
+# 13. Audit Logs
+
+## `audit_logs`
+
+Immutable record of sensitive actions.
+
+| Column               | Type                 | Required | Description |
+| -------------------- | -------------------- | -------- | ----------- |
+| id                   | UUID (PK)            | ✅        | Entry ID    |
+| timestamp            | TIMESTAMPTZ          | ✅        | Action time |
+| user_id              | UUID FK → users.id   | ❌        | Actor       |
+| impersonated_user_id | UUID FK → users.id   | ❌        | Override    |
+| venue_id             | UUID FK → venues.id  | ❌        | Venue       |
+| device_id            | UUID FK → devices.id | ❌        | Device      |
+| action_type          | TEXT                 | ✅        | Action      |
+| entity_type          | TEXT                 | ❌        | order       |
+| entity_id            | UUID                 | ❌        | Target      |
+| metadata             | JSONB                | ❌        | Context     |
+| ip_address           | TEXT                 | ❌        | Source      |
+
+---
+
+# 14. Waitlist Entries
+
+## `waitlist_entries`
+
+Queue for full slots.
+
+| Column             | Type                                          | Required | Description |
+| ------------------ | --------------------------------------------- | -------- | ----------- |
+| id                 | UUID (PK)                                     | ✅        | Entry ID    |
+| venue_id           | UUID FK → venues.id                           | ✅        | Venue       |
+| resource_slot_id   | UUID FK → resource_slots.id                   | ✅        | Slot        |
+| account_id         | UUID                                          | ❌        | Customer    |
+| visitor_type       | TEXT                                          | ❌        | adult/child |
+| quantity_requested | INT                                           | ✅        | Qty         |
+| status             | ENUM('waiting','notified','booked','expired') | ✅        | Status      |
+| notified_at        | TIMESTAMPTZ                                   | ❌        | Notified    |
+| expires_at         | TIMESTAMPTZ                                   | ❌        | Expiry      |
+| created_at         | TIMESTAMPTZ                                   | ✅        | Created     |
+| created_by         | UUID FK → users.id                            | ❌        | Staff       |
+
+---
+
+# 15. Alert Rules
+
+## `alert_rules`
+
+Monitoring thresholds.
+
+| Column              | Type                        | Required | Description    |
+| ------------------- | --------------------------- | -------- | -------------- |
+| id                  | UUID (PK)                   | ✅        | Rule ID        |
+| venue_id            | UUID FK → venues.id         | ✅        | Venue          |
+| alert_type          | TEXT                        | ✅        | device.offline |
+| threshold_value     | NUMERIC                     | ❌        | Limit          |
+| comparison_operator | ENUM('>','<','=','>=','<=') | ❌        | Operator       |
+| time_window_minutes | INT                         | ❌        | Window         |
+| is_active           | BOOLEAN                     | ✅        | Active         |
+| created_at          | TIMESTAMPTZ                 | ✅        | Created        |
+| updated_at          | TIMESTAMPTZ                 | ❌        | Updated        |
+| updated_by          | UUID FK → users.id          | ❌        | Editor         |
+
+---
+
+# 16. Alerts Log
+
+## `alerts_log`
+
+Triggered alerts.
+
+| Column          | Type                                     | Required | Description |
+| --------------- | ---------------------------------------- | -------- | ----------- |
+| id              | UUID (PK)                                | ✅        | Entry ID    |
+| alert_rule_id   | UUID FK → alert_rules.id                 | ✅        | Rule        |
+| venue_id        | UUID FK → venues.id                      | ✅        | Venue       |
+| triggered_at    | TIMESTAMPTZ                              | ✅        | Time        |
+| resolved_at     | TIMESTAMPTZ                              | ❌        | Resolved    |
+| status          | ENUM('active','acknowledged','resolved') | ✅        | Status      |
+| entity_type     | TEXT                                     | ❌        | device      |
+| entity_id       | UUID                                     | ❌        | Target      |
+| details         | JSONB                                    | ❌        | Context     |
+| acknowledged_by | UUID FK → users.id                       | ❌        | Staff       |
+
+---
+
+Ready?
