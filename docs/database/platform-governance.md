@@ -1,6 +1,4 @@
-# 📘 VenuePlus
-
-## Platform Governance – Database Design
+## Platform Governance
 
 *(Per-Customer Database Model)*
 
