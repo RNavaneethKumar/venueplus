@@ -224,3 +224,370 @@ GST 18% mapping:
 | GST 18%   | SGST      | 9    |
 
 ---
+
+---
+
+# 🎟 Ticketing & Resource Management
+
+## Resources
+
+---
+
+## 🧠 Purpose
+
+A **Resource** represents a physical or logical capacity pool that:
+
+* Reservations consume
+* Gate devices validate against
+* Events may reserve
+* Waitlists may depend on
+
+Examples:
+
+| Resource       | Admission Mode   | Capacity Type |
+| -------------- | ---------------- | ------------- |
+| Jump Arena     | rolling_duration | hard          |
+| Laser Tag Room | slot_based       | hard          |
+| Party Room     | slot_based       | hard          |
+| Arcade Floor   | open_access      | soft          |
+| Museum Hall    | open_access      | soft          |
+
+---
+
+## 🧩 Admission Behavior
+
+Defines how access is granted to the resource.
+
+| admission_mode   | Meaning             |
+| ---------------- | ------------------- |
+| slot_based       | Fixed session entry |
+| rolling_duration | Rolling admission   |
+| open_access      | Full-day access     |
+
+---
+
+## 🔐 Capacity Behavior
+
+| capacity_enforcement_type | Meaning               |
+| ------------------------- | --------------------- |
+| hard                      | Blocks sale when full |
+| soft                      | Tracks occupancy only |
+
+---
+
+## 🧱 Table: `resources`
+
+| Column                    | Type                                                | Required       | Description          |
+| ------------------------- | --------------------------------------------------- | -------------- | -------------------- |
+| id                        | UUID (PK)                                           | ✅              | Resource ID          |
+| venue_id                  | UUID FK → venues.id                                 | ✅              | Venue                |
+| name                      | TEXT                                                | ✅              | Resource name        |
+| description               | TEXT                                                | ❌              | Optional             |
+| admission_mode            | ENUM('slot_based','rolling_duration','open_access') | ✅              | Admission model      |
+| capacity_enforcement_type | ENUM('hard','soft')                                 | ✅              | Capacity enforcement |
+| capacity                  | INT                                                 | ❌              | Max occupancy        |
+| is_active                 | BOOLEAN                                             | ✅ default true | Active               |
+| created_at                | TIMESTAMPTZ                                         | ✅              | Created              |
+| created_by                | UUID FK → users.id                                  | ❌              | Creator              |
+
+---
+
+## 📌 Example Configurations
+
+---
+
+### Laser Tag Room
+
+```
+admission_mode = slot_based
+capacity_enforcement_type = hard
+capacity = 12
+```
+
+---
+
+### Jump Arena
+
+```
+admission_mode = rolling_duration
+capacity_enforcement_type = hard
+capacity = 50
+```
+
+---
+
+### Museum Hall
+
+```
+admission_mode = open_access
+capacity_enforcement_type = soft
+capacity = NULL
+```
+
+---
+
+## 🔗 Referenced By
+
+| Table                    | Purpose              |
+| ------------------------ | -------------------- |
+| resource_slots           | Slot-based capacity  |
+| product_resource_mapping | Product access       |
+| device_resource_mapping  | Gate validation      |
+| reservations             | Capacity consumption |
+
+---
+
+## 🚦 Notes
+
+* `capacity` is required for:
+
+  * slot_based
+  * rolling_duration (if hard)
+
+* `capacity` may be NULL for:
+
+  * open_access
+  * soft capacity tracking
+
+---
+
+---
+
+# 🎟 Resource Slotting System
+
+Slotting is applicable for resources where access is granted for a **fixed session window**.
+
+Examples:
+
+* Laser Tag
+* Escape Room
+* Party Room
+* Fitness Class
+* Workshop
+
+For such resources, availability must be managed across:
+
+* Date
+* Time
+* Capacity
+
+This is achieved using:
+
+1. `resource_slot_templates` (Recurring patterns)
+2. `resource_slots` (Dated inventory instances)
+
+---
+
+# 🧠 Conceptual Model
+
+| Entity        | Role                        |
+| ------------- | --------------------------- |
+| Resource      | Physical capacity pool      |
+| Slot Template | Recurring availability rule |
+| Slot          | Sellable inventory          |
+| Reservation   | Capacity consumption        |
+
+---
+
+# 🧱 Slot Templates
+
+## Table: `resource_slot_templates`
+
+Defines recurring availability patterns used to generate actual slots.
+
+Templates are:
+
+* Configurable per resource
+* Versioned
+* Used for forward slot generation
+
+Any modification to a template:
+
+> Must create a new version
+
+This ensures:
+
+* Previously generated slots remain unchanged
+* Reservations tied to those slots remain valid
+* Gate validation and reporting remain consistent
+
+---
+
+| Column                | Type                   | Required       | Description           |
+| --------------------- | ---------------------- | -------------- | --------------------- |
+| id                    | UUID (PK)              | ✅              | Template ID           |
+| resource_id           | UUID FK → resources.id | ✅              | Resource              |
+| version               | INT                    | ✅              | Template version      |
+| name                  | TEXT                   | ❌              | Label                 |
+| start_time            | TIME                   | ✅              | Slot generation start |
+| end_time              | TIME                   | ✅              | Slot generation end   |
+| slot_duration_minutes | INT                    | ✅              | Slot size             |
+| recurrence_type       | ENUM('daily','weekly') | ✅              | Pattern               |
+| days_of_week          | INT[]                  | ❌              | Required if weekly    |
+| effective_from        | DATE                   | ✅              | Valid from            |
+| effective_until       | DATE                   | ❌              | Valid until           |
+| is_active             | BOOLEAN                | ✅ default true | Active                |
+| created_at            | TIMESTAMPTZ            | ✅              | Created               |
+| created_by            | UUID FK → users.id     | ❌              | Creator               |
+
+---
+
+## Unique Constraint
+
+```sql
+UNIQUE(resource_id, version)
+```
+
+---
+
+# 🧱 Resource Slots
+
+## Table: `resource_slots`
+
+Represents a dated, time-bound unit of capacity for a resource.
+
+Each slot:
+
+* Is tied to a resource
+* Has a start and end time
+* Has a capacity
+* Can accept reservations
+* May be generated from template or manually created
+
+---
+
+| Column                | Type                                 | Required       | Description      |
+| --------------------- | ------------------------------------ | -------------- | ---------------- |
+| id                    | UUID (PK)                            | ✅              | Slot ID          |
+| resource_id           | UUID FK → resources.id               | ✅              | Resource         |
+| slot_template_id      | UUID FK → resource_slot_templates.id | ❌              | Source template  |
+| slot_template_version | INT                                  | ❌              | Template version |
+| slot_date             | DATE                                 | ✅              | Slot date        |
+| start_time            | TIME                                 | ✅              | Slot start       |
+| end_time              | TIME                                 | ✅              | Slot end         |
+| capacity              | INT                                  | ❌              | Override         |
+| is_active             | BOOLEAN                              | ✅ default true | Active           |
+| created_at            | TIMESTAMPTZ                          | ✅              | Created          |
+| created_by            | UUID FK → users.id                   | ❌              | Creator          |
+
+---
+
+## Capacity Behavior
+
+If:
+
+```text
+capacity IS NULL
+```
+
+System uses:
+
+```text
+resources.capacity
+```
+
+---
+
+# 🧮 Capacity Consumption
+
+Reservations consume capacity from:
+
+```text
+resource_slots
+```
+
+Availability is calculated as:
+
+```
+available_capacity =
+slot_capacity
+- confirmed_reservations
+```
+
+Confirmed reservations are derived from:
+
+```sql
+reservations
+WHERE resource_slot_id = X
+AND status = 'confirmed'
+```
+
+Slot availability is **not stored** and must always be derived.
+
+---
+
+# 🔄 Slot Generation
+
+Slots may be:
+
+* Generated automatically from template
+* Created manually by admin
+* Modified before reservations exist
+
+Once reservations exist:
+
+> Slot must be treated as committed inventory
+
+Mutability of slot is determined dynamically by:
+
+```sql
+reservation_count = 0
+```
+
+If reservation_count > 0:
+
+* Slot timing should not be altered
+* Slot duration should not be altered
+* Slot capacity should not be reduced below reservation count
+
+---
+
+# 📅 Template Versioning
+
+Template changes:
+
+* Do not affect previously generated slots
+* Affect only future slot generation
+
+Future slots may be:
+
+| Reservation Count | Action             |
+| ----------------- | ------------------ |
+| 0                 | Can be regenerated |
+
+> 0 | Must remain unchanged |
+
+---
+
+# 🔗 Used By
+
+| Module      | Dependency            |
+| ----------- | --------------------- |
+| Ticketing   | Session booking       |
+| Events      | Party room allocation |
+| Waitlist    | Slot-level queue      |
+| Gate Access | Entry validation      |
+| Reporting   | Utilization           |
+
+---
+
+# 🚦 Applicability
+
+Slotting applies only for:
+
+```text
+resources.admission_mode = slot_based
+```
+
+---
+
+This now documents the slotting system from:
+
+* Capacity
+* Booking
+* Inventory
+* Reservation
+* Reporting
+* Template lifecycle
+
+---
