@@ -227,7 +227,7 @@ GST 18% mapping:
 
 ---
 
-# 🎟 Ticketing & Resource Management
+# Resource Management
 
 ## Resources
 
