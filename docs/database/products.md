@@ -194,3 +194,52 @@ Prevent overlapping price windows:
 | reporting     | Revenue     |
 
 ---
+
+# 🧱 Table: `product_tax_structures`
+
+Maps products to applicable tax structure.
+
+---
+
+| Column           | Type                        | Required       | Description |
+| ---------------- | --------------------------- | -------------- | ----------- |
+| id               | UUID (PK)                   | ✅              | Mapping ID  |
+| product_id       | UUID FK → products.id       | ✅              | Product     |
+| tax_structure_id | UUID FK → tax_structures.id | ✅              | GST 18%     |
+| effective_from   | DATE                        | ❌              | Start       |
+| effective_until  | DATE                        | ❌              | End         |
+| is_active        | BOOLEAN                     | ✅ default true | Active      |
+| created_at       | TIMESTAMPTZ                 | ✅              | Created     |
+| created_by       | UUID FK → users.id          | ❌              | Creator     |
+
+---
+
+# 📌 Checkout Behavior
+
+At order creation:
+
+1. Product → Tax Structure
+2. Tax Structure → Components
+3. Snapshot components into:
+
+```text
+order_item_tax_components
+```
+
+This ensures:
+
+* Invoice immutability
+* Accurate refund calculations
+* Historical reporting integrity
+
+---
+
+# 🔗 Used By
+
+| Table              | Purpose            |
+| ------------------ | ------------------ |
+| order_items        | Tax calculation    |
+| invoice_generation | GST breakup        |
+| reporting          | Liability tracking |
+
+---
