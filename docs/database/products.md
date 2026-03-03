@@ -566,6 +566,108 @@ Supports:
 
 ---
 
+# 🎟 Promo Code Usage Tracking
+
+Tracks each successful usage of a promo code.
+
+Used to enforce:
+
+* Total usage limits
+* Per-customer usage limits
+* Campaign reporting
+
+---
+
+# 🧱 Table: `promo_code_usages`
+
+---
+
+| Column          | Type                       | Required | Description      |
+| --------------- | -------------------------- | -------- | ---------------- |
+| id              | UUID (PK)                  | ✅        | Usage ID         |
+| promo_code_id   | UUID FK → promo_codes.id   | ✅        | Promo            |
+| order_id        | UUID FK → orders.id        | ✅        | Order            |
+| account_id      | UUID FK → accounts.id      | ❌        | Customer         |
+| discount_amount | NUMERIC(12,2)              | ✅        | Applied discount |
+| used_at         | TIMESTAMPTZ                | ✅        | Usage time       |
+| status          | ENUM('applied','reversed') | ✅        | Lifecycle        |
+
+---
+
+---
+
+# 🧠 Usage Flow
+
+### On Successful Checkout:
+
+Insert:
+
+```text
+promo_code_usages
+status = applied
+```
+
+---
+
+### On Order Cancellation / Refund:
+
+Insert:
+
+```text
+status = reversed
+```
+
+Do NOT delete original record.
+
+This preserves audit trail.
+
+---
+
+# 📊 Enforcing Limits
+
+---
+
+## Total Usage Check
+
+```sql
+COUNT(*) WHERE promo_code_id = X
+AND status = 'applied'
+```
+
+---
+
+## Per Customer Check
+
+```sql
+COUNT(*) WHERE promo_code_id = X
+AND account_id = Y
+AND status = 'applied'
+```
+
+---
+
+# 📌 Important Design Rule
+
+Promo usage must be:
+
+* Recorded only after payment success
+* Reversed only after order fully cancelled
+* Never hard deleted
+
+---
+
+# 🔗 Used By
+
+| Module    | Purpose           |
+| --------- | ----------------- |
+| Checkout  | Validation        |
+| Reporting | Campaign metrics  |
+| CRM       | Customer behavior |
+
+---
+
+---
+
 **Bundle Promotions**
 
 This supports:
