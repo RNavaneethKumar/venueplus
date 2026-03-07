@@ -1,8 +1,8 @@
 # VenuePlus — Complete Product Specification
 
-**Version:** 2.0  
-**Classification:** Internal Technical Specification  
-**Scope:** All modules — Ticketing, Membership, Wallet, Donations, Adoptions, Gift Cards, Redemption, F&B, Retail, CRM, Waivers, Reporting, Platform Governance
+**Version:** 2.1
+**Classification:** Internal Technical Specification
+**Scope:** All modules — Ticketing, Membership, Wallet, Donations, Adoptions, Gift Cards, Redemption, F&B, Retail, CRM, Waivers, Reporting, Platform Governance, Till Management
 
 ---
 
@@ -28,6 +28,7 @@
 18. [Reporting & Business Intelligence](#18-reporting--business-intelligence)
 19. [Access Control & Security](#19-access-control--security)
 20. [Venue Settings Registry](#20-venue-settings-registry)
+21. [Till Management](#21-till-management)
 
 ---
 
@@ -62,6 +63,7 @@ VenuePlus is an all-in-one SaaS platform for managing entertainment venues — i
 | CRM | Customer 360 view, segmentation, and marketing automation |
 | Waivers | Native digital waiver with legal compliance and OTP signing |
 | Reporting | Real-time dashboards and nightly roll-up analytics |
+| Till Management | Cash drawer session lifecycle — open, cash movements, close, Z-Report |
 
 ## Channel Support
 
@@ -298,6 +300,7 @@ UNIQUE: `(venue_id, feature_key)`
 | `module.retail` | Retail |
 | `module.crm` | CRM |
 | `module.waivers` | Waivers |
+| `module.till` | Till Management |
 
 ## 3.7 Devices
 
@@ -2078,6 +2081,252 @@ All valid `venue_settings.setting_key` values. Keys follow `module.setting_name`
 | `reporting.live_headcount_enabled` | boolean | `true` | Real-time occupancy |
 | `reporting.data_retention_months` | integer | `36` | Data retention |
 
+## Till (`pos.till.*`)
+
+| Key | Table | Type | Default | Description |
+|-----|-------|------|---------|-------------|
+| `pos.till_mode` | venue_settings | string | `"counter"` | `counter` or `user` — scope of a session |
+| `pos.variance_threshold` | venue_settings | number | `0` | Max variance (₹) before manager approval; `0` = any variance triggers approval |
+| `pos.cash_movement_approval_threshold` | venue_settings | number | `500` | Cash movement amount (₹) requiring manager PIN |
+| `pos.require_till` | venue_feature_flags | boolean | `false` | Block order creation when no open till session exists |
+| `pos.blind_close_only` | venue_feature_flags | boolean | `false` | Force blind-close procedure for all closings |
+| `pos.auto_close_midnight` | venue_feature_flags | boolean | `true` | Auto-close open sessions at midnight (venue local time) |
+| `pos.enable_denomination_entry` | venue_feature_flags | boolean | `false` | Enable denomination breakdown at open and close |
+
 ---
 
-*End of VenuePlus Product Specification v2.0*
+# 21. Till Management
+
+Till Management governs the lifecycle of a cashier's cash drawer session: opening with a starting float, recording mid-session cash movements, and closing out at end of shift with a full reconciliation report.
+
+## 21.1 Overview
+
+Each business day, a cashier opens a **till session** by declaring an opening float. All cash sales, cash drops, paid-in and paid-out movements are tracked against the session. At close, the system computes an expected cash balance which is reconciled against the cashier's physical count. Any variance requires manager approval before the session seals. A **Z-Report** is generated at close and can be printed on an 80mm thermal receipt printer.
+
+**Session modes** (configured via `pos.till_mode`):
+
+| Mode | Description |
+|------|-------------|
+| `counter` (default) | Session is tied to a named physical counter. Multiple staff may operate the same counter within a session. |
+| `user` | Session is tied to the logged-in cashier. Follows the cashier across counters. |
+
+At any moment, a counter or user may have at most one open session.
+
+## 21.2 Session Lifecycle
+
+```
+[Open] → [Active: orders + movements] → [Initiate Close]
+                                               ↓
+                                     Normal Close / Blind Close
+                                               ↓
+                                       Variance Check
+                                       ↙           ↘
+                             Within threshold    Exceeds threshold
+                                   ↓                    ↓
+                               [Sealed]         Manager approval → [Sealed]
+                                               (or force-close)
+```
+
+**Session statuses:**
+
+| Status | Description |
+|--------|-------------|
+| `open` | Active — accepting orders and movements |
+| `closed` | Normal or blind close; cash count provided |
+| `forced` | Manager force-closed; no cash count recorded |
+| `auto` | System auto-closed at midnight |
+
+## 21.3 Opening a Till
+
+**Precondition:** No open session exists for the counter/user.
+
+The cashier records the **opening float** — the starting cash placed in the drawer. Denomination breakdown is optionally captured when `pos.enable_denomination_entry` is enabled.
+
+## 21.4 Cash Movements
+
+Mid-session cash transfers are recorded as movements against the current session. Each movement adjusts the expected closing balance.
+
+| Movement Type | Code | Effect on Expected Cash |
+|---------------|------|-------------------------|
+| Cash Drop | `drop` | Decreases (cash removed to safe) |
+| Paid In | `paid_in` | Increases (cash added, e.g. petty cash reimbursement) |
+| Paid Out | `paid_out` | Decreases (cash removed for an expense) |
+
+A reason note (mandatory, max 100 chars) is recorded with every movement. Movements above `pos.cash_movement_approval_threshold` require a manager PIN.
+
+## 21.5 Closing a Till
+
+### Normal Close
+The system shows the expected cash balance. The cashier enters the actual cash count. The system computes the variance and, if it exceeds the threshold, requires a manager PIN before sealing the session.
+
+### Blind Close
+The system hides the expected balance. The cashier counts cash and submits the actual amount first. Only after submission does the system reveal the expected balance and variance. This prevents confirmation bias in the count. Close type is recorded as `blind_closed` for audit. Enabled venue-wide via `pos.blind_close_only` or chosen per-close by the cashier.
+
+### Manager Force Close
+A manager may close any open session from the management screen without a cash count. Recorded as `forced`; Z-Report is flagged *Force Closed — No Cash Count*.
+
+### Midnight Auto-Close
+When `pos.auto_close_midnight` is enabled (default `true`), a scheduled job runs at 00:00 venue local time and force-closes any open sessions. Each receives a Z-Report flagged *Auto-closed at midnight — no cash count*. This ensures every Z-Report maps to a single calendar date.
+
+## 21.6 Variance and Manager Approval
+
+**Expected cash formula:**
+
+```
+Expected = Opening Float
+         + Sum of cash-method order payments in session
+         + Sum of paid_in movements
+         − Sum of paid_out movements
+         − Sum of drop movements
+```
+
+**Variance** = Actual − Expected (positive = overage, negative = shortage).
+
+When `pos.variance_threshold = 0` (default), any non-zero variance triggers the manager approval step. The approving manager's identity, timestamp, and an optional note are recorded on the session and printed on the Z-Report.
+
+**Business rule:** `expected_amount` is always computed server-side. It is never accepted from the client.
+
+## 21.7 X-Report (Mid-Session Summary)
+
+An X-Report generates the same figures as a Z-Report but does **not** close the session. It can be printed multiple times. Useful for supervisory checks and mid-shift cash drops.
+
+## 21.8 Z-Report
+
+The Z-Report is the canonical end-of-session document. It is stored as an immutable JSON snapshot in `cash_sessions.z_report_data` at the moment of close and can be reprinted at any time without re-running computations.
+
+**Z-Report sections:**
+
+| Section | Contents |
+|---------|---------|
+| Header | Venue name, counter/user, session ID, opened at, closed at, closed by |
+| Opening Float | Amount and optional denomination breakdown |
+| Sales Summary | Order count, gross sales, total discounts, net sales |
+| Sales by Payment Method | Per-method order count and amount |
+| Cash Movements | Itemised drops/paid-in/paid-out with timestamps and reasons |
+| Cash Reconciliation | Opening float → adjustments → expected → actual → variance |
+| Approval | Manager name, time, and override note (if applicable) |
+| Close Metadata | Close type (Normal / Blind / Forced / Auto), session hash |
+
+**Print format:** 80mm thermal receipt via browser print dialog with `@media print` stylesheet.
+
+## 21.9 Role Permissions
+
+| Action | Cashier | Manager | Admin |
+|--------|---------|---------|-------|
+| Open till | ✓ | ✓ | ✓ |
+| Print X-Report | ✓ | ✓ | ✓ |
+| Record cash movement | ✓ | ✓ | ✓ |
+| Initiate normal / blind close | ✓ | ✓ | ✓ |
+| Approve variance at close | — | ✓ | ✓ |
+| Force-close another session | — | ✓ | ✓ |
+| View all sessions / Z-Reports | — | ✓ | ✓ |
+| Manage counters / configure settings | — | — | ✓ |
+
+**New permission keys:**
+
+| Key | Module | Sensitive |
+|-----|--------|-----------|
+| `till.open` | pos | No |
+| `till.close` | pos | No |
+| `till.movement` | pos | No |
+| `till.approve_variance` | pos | Yes |
+| `till.force_close` | pos | Yes |
+| `till.view_reports` | pos | No |
+
+## 21.10 Database Schema
+
+### Table: `cash_drawers`
+
+Named physical or logical tills. Used only in `counter` mode.
+
+| Column | Type | Required | Description |
+|--------|------|----------|-------------|
+| id | UUID (PK) | ✅ | Drawer ID |
+| venue_id | UUID FK → venues.id | ✅ | Venue |
+| name | TEXT | ✅ | e.g. "Counter 1", "Main Desk" |
+| description | TEXT | ❌ | Optional notes |
+| is_active | BOOLEAN | ✅ default true | Active |
+| created_at | TIMESTAMPTZ | ✅ | Created |
+| created_by | UUID FK → users.id | ❌ | Creator |
+
+### Table: `cash_sessions`
+
+One row per open-to-close cycle.
+
+| Column | Type | Required | Description |
+|--------|------|----------|-------------|
+| id | UUID (PK) | ✅ | Session ID |
+| venue_id | UUID FK → venues.id | ✅ | Venue |
+| drawer_id | UUID FK → cash_drawers.id | ❌ | NULL for user-mode sessions |
+| opened_by | UUID FK → users.id | ✅ | Staff who opened |
+| closed_by | UUID FK → users.id | ❌ | Staff who closed (NULL if auto/forced) |
+| status | ENUM('open','closed','blind_closed','forced','auto') | ✅ | Session state |
+| open_time | TIMESTAMPTZ | ✅ | Opened at |
+| close_time | TIMESTAMPTZ | ❌ | Closed at |
+| opening_amount | NUMERIC(12,2) | ✅ | Float entered at open |
+| opening_denominations | JSONB | ❌ | Denomination breakdown at open |
+| actual_amount | NUMERIC(12,2) | ❌ | Cash count entered at close |
+| actual_denominations | JSONB | ❌ | Denomination breakdown at close |
+| expected_amount | NUMERIC(12,2) | ❌ | Computed server-side at close |
+| variance | NUMERIC(12,2) | ❌ | actual_amount − expected_amount |
+| close_type | ENUM('normal','blind','forced','auto') | ❌ | How the session was closed |
+| variance_approved_by | UUID FK → users.id | ❌ | Manager who approved variance |
+| variance_approved_at | TIMESTAMPTZ | ❌ | Approval timestamp |
+| variance_note | TEXT | ❌ | Manager's note at approval |
+| z_report_data | JSONB | ❌ | Immutable Z-Report snapshot (written once at close) |
+| created_at | TIMESTAMPTZ | ✅ | Created |
+
+**Constraint:** At most one row with `status = 'open'` per `drawer_id` (counter mode) or per `opened_by` user (user mode).
+
+### Table: `cash_movements`
+
+Cash in/out events during a session.
+
+| Column | Type | Required | Description |
+|--------|------|----------|-------------|
+| id | UUID (PK) | ✅ | Movement ID |
+| venue_id | UUID FK → venues.id | ✅ | Venue |
+| session_id | UUID FK → cash_sessions.id | ✅ | Parent session |
+| movement_type | ENUM('drop','paid_in','paid_out') | ✅ | Movement type |
+| amount | NUMERIC(12,2) | ✅ | Amount (always positive) |
+| reason | TEXT | ✅ | Mandatory reason note (max 100 chars) |
+| recorded_by | UUID FK → users.id | ✅ | Staff who recorded |
+| approved_by | UUID FK → users.id | ❌ | Manager who approved (above threshold) |
+| created_at | TIMESTAMPTZ | ✅ | Recorded at |
+
+## 21.11 API Endpoints
+
+All endpoints require `requireStaff` + `requireVenueHeader`.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/till/sessions` | Open a new session |
+| `GET` | `/till/sessions/active` | Get the current open session for this counter/user |
+| `GET` | `/till/sessions` | List sessions (date range + status filters) |
+| `GET` | `/till/sessions/:id` | Get session detail including Z-Report data |
+| `POST` | `/till/sessions/:id/close` | Close a session (normal or blind) |
+| `POST` | `/till/sessions/:id/force-close` | Manager force-close |
+| `GET` | `/till/sessions/:id/x-report` | Get X-Report for open session (does not close) |
+| `POST` | `/till/movements` | Record a cash movement |
+| `GET` | `/till/drawers` | List configured cash drawers |
+| `POST` | `/till/drawers` | Create a cash drawer (admin) |
+
+## 21.12 POS UI
+
+**Till button in QuickActionBar:** A 💰 button is added to the QuickActionBar. Shows a green dot when a session is open; red when no session exists. Tapping opens the Till Menu bottom sheet.
+
+**Till Menu options:**
+- Open Till (shown only when no active session)
+- X-Report
+- Cash In / Cash Out / Cash Drop
+- Close Till (Normal or Blind)
+
+**Open Till screen:** Numeric keypad for opening float entry. Toggle for denomination breakdown (when `pos.enable_denomination_entry` is enabled).
+
+**Close Till screen:** Two-tab layout — Normal and Blind. The Normal tab shows the expected amount alongside the actual-count input. The Blind tab hides the expected amount until the cashier submits their count. After submission: variance display → manager PIN step (if required) → Z-Report preview with print button.
+
+**Management screen — Till Sessions tab:** Table of all sessions with counter, cashier, open/close times, opening float, expected, actual, variance, and status. Clicking a row opens a printable Z-Report. Force Close is available for open sessions (manager role required).
+
+---
+
+*End of VenuePlus Product Specification v2.1*
