@@ -972,6 +972,7 @@ The financial transaction layer. All revenue flows through orders.
 | source_channel | ENUM('pos','online','kiosk') | ✅ | Channel |
 | parent_order_id | UUID FK → orders.id | ❌ | For refunds |
 | notes | TEXT | ❌ | Staff notes |
+| cash_session_id | UUID FK → cash_sessions.id | ❌ | Till session open when order was placed. NULL for online/kiosk orders and pre-migration rows. |
 | created_at | TIMESTAMPTZ | ✅ | Created |
 | created_by | UUID FK → users.id | ❌ | Staff |
 
@@ -2173,18 +2174,27 @@ When `pos.auto_close_midnight` is enabled (default `true`), a scheduled job runs
 **Expected cash formula:**
 
 ```
-Expected = Opening Float
-         + Sum of cash-method order payments in session
-         + Sum of paid_in movements
-         − Sum of paid_out movements
-         − Sum of drop movements
+Expected = opening_amount
+         + SUM(order_payments.amount
+               WHERE orders.cash_session_id = :session_id
+                 AND orders.order_type      = 'sale'
+                 AND order_payments.payment_method = 'cash')
+         − SUM(order_payments.amount
+               WHERE orders.cash_session_id = :session_id
+                 AND orders.order_type      = 'refund'
+                 AND order_payments.payment_method = 'cash')
+         + SUM(cash_movements.amount WHERE movement_type = 'paid_in')
+         − SUM(cash_movements.amount WHERE movement_type = 'paid_out')
+         − SUM(cash_movements.amount WHERE movement_type = 'drop')
 ```
+
+Cash sales and refunds are identified via `orders.cash_session_id`, which links every POS order to the till session that was open when it was placed.
 
 **Variance** = Actual − Expected (positive = overage, negative = shortage).
 
 When `pos.variance_threshold = 0` (default), any non-zero variance triggers the manager approval step. The approving manager's identity, timestamp, and an optional note are recorded on the session and printed on the Z-Report.
 
-**Business rule:** `expected_amount` is always computed server-side. It is never accepted from the client.
+**Business rule:** `expected_amount` is always computed server-side from the ledger. It is never accepted from the client.
 
 ## 21.7 X-Report (Mid-Session Summary)
 
@@ -2277,6 +2287,16 @@ One row per open-to-close cycle.
 | created_at | TIMESTAMPTZ | ✅ | Created |
 
 **Constraint:** At most one row with `status = 'open'` per `drawer_id` (counter mode) or per `opened_by` user (user mode).
+
+### Modification: `orders.cash_session_id`
+
+The migration adds a nullable column to the existing `orders` table:
+
+| Column | Type | Required | Description |
+|--------|------|----------|-------------|
+| cash_session_id | UUID FK → cash_sessions.id | ❌ | Set at POS order creation. NULL for online/kiosk orders and rows pre-dating this migration. |
+
+A sparse index (`WHERE cash_session_id IS NOT NULL`) makes session-scoped lookups fast. This column is the sole source of truth for which orders contribute to a session's expected cash balance.
 
 ### Table: `cash_movements`
 
