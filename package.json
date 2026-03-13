@@ -1,0 +1,36 @@
+{
+  "name": "venueplus",
+  "version": "1.0.0",
+  "private": true,
+  "description": "VenuePlus — All-in-one SaaS platform for entertainment venues",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "typecheck": "turbo run typecheck",
+    "db:generate": "turbo run db:generate --filter=@venueplus/database",
+    "db:migrate": "turbo run db:migrate --filter=@venueplus/database",
+    "db:studio": "turbo run db:studio --filter=@venueplus/database",
+    "api:dev": "turbo run dev --filter=@venueplus/api",
+    "pos:dev": "turbo run dev --filter=@venueplus/pos",
+    "kiosk:dev": "turbo run dev --filter=@venueplus/kiosk",
+    "ecommerce:dev": "turbo run dev --filter=@venueplus/ecommerce"
+  },
+  "devDependencies": {
+    "turbo": "^2.3.0",
+    "typescript": "^5.7.2",
+    "@types/node": "^22.10.0",
+    "prettier": "^3.4.2",
+    "eslint": "^9.17.0"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "packageManager": "pnpm@9.14.4"
+}

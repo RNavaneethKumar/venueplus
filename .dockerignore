@@ -1,0 +1,56 @@
+# =============================================================================
+# .dockerignore — applied when building from the repo root as build context
+# =============================================================================
+
+# Version control
+.git
+.gitignore
+
+# Node dependencies — re-installed inside the container
+node_modules
+**/node_modules
+
+# Next.js build output — re-built inside the container
+**/.next
+**/dist
+**/build
+
+# Turbo cache
+.turbo
+**/.turbo
+
+# Local environment files — secrets are passed via docker-compose env vars
+**/.env
+**/.env.local
+**/.env.*.local
+.env.docker.local
+
+# Test and coverage artifacts
+**/coverage
+**/__tests__
+**/*.test.ts
+**/*.spec.ts
+
+# Editor and OS files
+.DS_Store
+.vscode
+.idea
+*.swp
+*.swo
+
+# Documentation
+docs
+README.md
+CHANGELOG.md
+
+# TypeScript incremental build info
+**/*.tsbuildinfo
+
+# Drizzle generated migrations (schema is applied separately)
+# Keep database/ SQL scripts — they are needed by the API image
+# packages/database/drizzle   ← uncomment to exclude if desired
+
+# Docker files themselves (not needed in context)
+**/Dockerfile
+docker-compose*.yml
+.dockerignore
