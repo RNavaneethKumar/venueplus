@@ -16,7 +16,7 @@ const HEARTBEAT_INTERVAL_MS = 60_000 // 1 minute
 
 export default function PosPage() {
   const router = useRouter()
-  const { token, activeTab, setVenueConfig, setTillSession, cart, cartTotal } = usePosStore()
+  const { token, activeTab, setVenueConfig, setTillSession, cart, cartTotal, hasRole } = usePosStore()
   const [products, setProducts] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [cartDrawerOpen, setCartDrawerOpen] = useState(false)
@@ -35,13 +35,17 @@ export default function PosPage() {
     return () => clearInterval(id)
   }, [token])
 
-  // Guard: POS terminal must be licensed. Admin panel uses a different path.
+  // Guard: POS terminal must be licensed.
+  // Admin roles (super_admin, venue_admin, manager) are exempt — send them to /admin.
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const deviceToken = window.localStorage.getItem(DEVICE_TOKEN_KEY)
-      if (!deviceToken) { router.replace('/activate'); return }
+      if (!deviceToken) {
+        const exempt = hasRole('super_admin', 'venue_admin', 'manager')
+        router.replace(exempt ? '/admin' : '/activate')
+      }
     }
-  }, [router])
+  }, [router, hasRole])
 
   useEffect(() => {
     if (!token) { router.push('/login'); return }

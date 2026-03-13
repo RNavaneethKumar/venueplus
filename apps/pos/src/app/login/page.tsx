@@ -37,14 +37,19 @@ export default function LoginPage() {
       const { token, user } = res.data.data
 
       window.localStorage.setItem('pos_token', token)
+      const roles: string[] = user.roles ?? []
       setAuth(token, {
         id:          user.id,
         name:        user.name,
         venueId:     user.venueId,
-        roles:       user.roles       ?? [],
+        roles,
         permissions: user.permissions ?? [],
       })
-      router.push('/')
+      // Admin roles go straight to the admin panel (no device activation needed).
+      // POS-only roles go to / which will enforce device licensing.
+      const adminRoles = ['super_admin', 'venue_admin', 'manager']
+      const isAdmin = roles.some((r) => adminRoles.includes(r))
+      router.push(isAdmin ? '/admin' : '/')
     } catch (err: any) {
       toast.error(err.response?.data?.error?.message ?? 'Login failed')
     } finally {
