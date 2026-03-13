@@ -35,6 +35,14 @@ export default function PosPage() {
     return () => clearInterval(id)
   }, [token])
 
+  // Guard: POS terminal must be licensed. Admin panel uses a different path.
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const deviceToken = window.localStorage.getItem(DEVICE_TOKEN_KEY)
+      if (!deviceToken) { router.replace('/activate'); return }
+    }
+  }, [router])
+
   useEffect(() => {
     if (!token) { router.push('/login'); return }
     // Fetch venue config (not persisted — refresh each session)
