@@ -11,12 +11,29 @@ import Topbar from '@/components/pos/Topbar'
 import Tabs from '@/components/pos/Tabs'
 import QuickActionBar from '@/components/pos/QuickActionBar'
 
+const DEVICE_TOKEN_KEY = 'venueplus_device_token'
+const HEARTBEAT_INTERVAL_MS = 60_000 // 1 minute
+
 export default function PosPage() {
   const router = useRouter()
   const { token, activeTab, setVenueConfig, setTillSession, cart, cartTotal } = usePosStore()
   const [products, setProducts] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [cartDrawerOpen, setCartDrawerOpen] = useState(false)
+
+  // Periodic heartbeat — keeps device lastHeartbeatAt fresh in admin panel
+  useEffect(() => {
+    if (!token) return
+    const deviceToken = typeof window !== 'undefined'
+      ? window.localStorage.getItem(DEVICE_TOKEN_KEY)
+      : null
+    if (!deviceToken) return
+
+    const sendHeartbeat = () => { posApi.device.heartbeat(deviceToken).catch(() => {}) }
+    sendHeartbeat() // immediate on mount
+    const id = setInterval(sendHeartbeat, HEARTBEAT_INTERVAL_MS)
+    return () => clearInterval(id)
+  }, [token])
 
   useEffect(() => {
     if (!token) { router.push('/login'); return }

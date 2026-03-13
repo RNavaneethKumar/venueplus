@@ -6,12 +6,24 @@ import toast from 'react-hot-toast'
 import { posApi, getTenantSlug } from '@/lib/api'
 import { usePosStore } from '@/store/posStore'
 
+const DEVICE_TOKEN_KEY = 'venueplus_device_token'
+
 export default function LoginPage() {
   const router = useRouter()
   const { setAuth } = usePosStore()
   const [identifier, setIdentifier] = useState('')
   const [pin, setPin]               = useState('')
   const [loading, setLoading]       = useState(false)
+
+  // Redirect to activation if this terminal has no device token
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const deviceToken = window.localStorage.getItem(DEVICE_TOKEN_KEY)
+      if (!deviceToken) {
+        router.replace('/activate')
+      }
+    }
+  }, [router])
 
   // Derive tenant info for display
   const tenantSlug = getTenantSlug()

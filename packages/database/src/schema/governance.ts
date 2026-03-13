@@ -141,6 +141,11 @@ export const devices = pgTable('devices', {
   lastIpAddress: text('last_ip_address'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   createdBy: uuid('created_by').references(() => users.id),
+  // License activation fields (added by migration add_device_licensing.sql)
+  licenseKey: text('license_key').unique(),
+  deviceTokenHash: text('device_token_hash'),
+  activatedAt: timestamp('activated_at', { withTimezone: true }),
+  isActivated: boolean('is_activated').notNull().default(false),
 })
 
 // Note: notificationTemplates table is defined in crm.ts (canonical location)

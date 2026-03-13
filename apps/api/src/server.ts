@@ -23,6 +23,7 @@ import { accountRoutes } from './modules/account/routes.js'
 import { tillRoutes } from './modules/till/routes.js'
 import { adminRoutes } from './modules/admin/routes.js'
 import { globalAdminRoutes } from './modules/global-admin/routes.js'
+import { deviceRoutes } from './modules/device/routes.js'
 import { errorHandler } from './middleware/errorHandler.js'
 import { resolveTenant } from './middleware/tenant.js'
 import { env } from './config/env.js'
@@ -145,6 +146,7 @@ await app.register(reportRoutes,       { prefix: `${API}/reports` })
 await app.register(tillRoutes,         { prefix: `${API}/till` })
 await app.register(adminRoutes,        { prefix: `${API}/admin` })
 await app.register(globalAdminRoutes,  { prefix: `${API}/global-admin` })
+await app.register(deviceRoutes,       { prefix: `${API}/device` })
 
 // Health check
 app.get('/health', async () => ({ status: 'ok', ts: new Date().toISOString() }))

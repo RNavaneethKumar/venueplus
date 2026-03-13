@@ -184,6 +184,8 @@ export const posApi = {
       apiClient.post('/admin/devices', data),
     updateDevice: (id: string, data: Record<string, unknown>) =>
       apiClient.patch(`/admin/devices/${id}`, data),
+    generateLicense: (id: string) =>
+      apiClient.post(`/admin/devices/${id}/generate-license`, {}),
     // Audit Logs
     listAuditLogs: (params?: Record<string, string>) =>
       apiClient.get('/admin/audit-logs', { params }),
@@ -254,5 +256,14 @@ export const posApi = {
     // Reports
     getReportSummary: (from?: string, to?: string) =>
       apiClient.get('/admin/reports/summary', { params: { from, to } }),
+  },
+  // Device licensing — public endpoints (no JWT needed, only x-tenant-slug)
+  device: {
+    activate: (licenseKey: string) =>
+      apiClient.post('/device/activate', { licenseKey }),
+    verify: (deviceToken: string) =>
+      apiClient.post('/device/verify', { deviceToken }),
+    heartbeat: (deviceToken: string) =>
+      apiClient.post('/device/heartbeat', { deviceToken }),
   },
 }

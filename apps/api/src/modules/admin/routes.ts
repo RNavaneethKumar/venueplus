@@ -522,6 +522,50 @@ export async function adminRoutes(fastify: FastifyInstance): Promise<void> {
     }
   )
 
+  /** POST /admin/devices/:id/generate-license */
+  fastify.post<{ Params: { id: string } }>(
+    '/devices/:id/generate-license',
+    { preHandler: adminGuard },
+    async (request, reply) => {
+      const { createHash, randomBytes } = await import('crypto')
+      const db = resolveDb(request)
+      const { id } = request.params
+      const venueId = request.venueId!
+
+      // Ensure the device belongs to this venue
+      const [device] = await db
+        .select({ id: devices.id, name: devices.name })
+        .from(devices)
+        .where(and(eq(devices.id, id), eq(devices.venueId, venueId)))
+        .limit(1)
+
+      if (!device) {
+        return reply.status(HTTP_STATUS.NOT_FOUND).send({
+          success: false,
+          error: { code: 'NOT_FOUND', message: 'Device not found' },
+        })
+      }
+
+      // Generate license key: VP-XXXX-XXXX-XXXX (base-36 random, uppercased)
+      const segment = () => randomBytes(3).toString('hex').toUpperCase().slice(0, 4)
+      const licenseKey = `VP-${segment()}-${segment()}-${segment()}`
+
+      const [updated] = await db
+        .update(devices)
+        .set({
+          licenseKey,
+          // Reset activation so the old terminal must re-activate with the new key
+          isActivated:     false,
+          deviceTokenHash: null,
+          activatedAt:     null,
+        })
+        .where(and(eq(devices.id, id), eq(devices.venueId, venueId)))
+        .returning()
+
+      return reply.send({ success: true, data: { licenseKey, device: updated } })
+    }
+  )
+
   // ──────────────────────────────────────────────────────────────────────────
   // AUDIT LOGS
   // ──────────────────────────────────────────────────────────────────────────
