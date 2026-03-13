@@ -21,7 +21,7 @@ export function getTenantSlug(): string {
   }
 
   // "greenpark.venueplus.io" → "greenpark"
-  return parts[0]
+  return parts[0] ?? ''
 }
 
 export const apiClient = axios.create({

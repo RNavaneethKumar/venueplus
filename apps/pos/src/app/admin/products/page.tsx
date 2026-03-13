@@ -339,12 +339,12 @@ function ViewEditProductButton({ id }: { id: string }) {
       setAddingPrice(true)
       setPriceError(null)
       await posApi.admin.createProductPrice(id, {
-        visitorTypeId:  newPrice.visitorTypeId ?? undefined,
+        ...(newPrice.visitorTypeId ? { visitorTypeId: newPrice.visitorTypeId } : {}),
         basePrice:      Number(newPrice.basePrice),
         currencyCode:   newPrice.currencyCode ?? 'INR',
-        salesChannel:   newPrice.salesChannel ?? undefined,
-        effectiveFrom:  newPrice.effectiveFrom ?? undefined,
-        effectiveUntil: newPrice.effectiveUntil ?? undefined,
+        ...(newPrice.salesChannel ? { salesChannel: newPrice.salesChannel } : {}),
+        ...(newPrice.effectiveFrom ? { effectiveFrom: newPrice.effectiveFrom } : {}),
+        ...(newPrice.effectiveUntil ? { effectiveUntil: newPrice.effectiveUntil } : {}),
         isActive:       newPrice.isActive ?? true,
       })
       setShowAddPrice(false)
@@ -458,14 +458,14 @@ function ViewEditProductButton({ id }: { id: string }) {
                         <div className="grid grid-cols-2 gap-2">
                           <div>
                             <label className="text-xs text-slate-400 mb-1 block">Visitor Type</label>
-                            <select value={newPrice.visitorTypeId ?? ''} onChange={(e) => setNewPrice({ ...newPrice, visitorTypeId: e.target.value || undefined })} className={inputCls + ' w-full'}>
+                            <select value={newPrice.visitorTypeId ?? ''} onChange={(e) => setNewPrice({ ...newPrice, ...(e.target.value ? { visitorTypeId: e.target.value } : { visitorTypeId: undefined as never }) })} className={inputCls + ' w-full'}>
                               <option value="">All visitors</option>
                               {visitorTypes.map((vt) => <option key={vt.id} value={vt.id}>{vt.name}</option>)}
                             </select>
                           </div>
                           <div>
                             <label className="text-xs text-slate-400 mb-1 block">Sales Channel</label>
-                            <select value={newPrice.salesChannel ?? ''} onChange={(e) => setNewPrice({ ...newPrice, salesChannel: e.target.value || undefined })} className={inputCls + ' w-full'}>
+                            <select value={newPrice.salesChannel ?? ''} onChange={(e) => setNewPrice({ ...newPrice, ...(e.target.value ? { salesChannel: e.target.value } : { salesChannel: undefined as never }) })} className={inputCls + ' w-full'}>
                               <option value="">All</option>
                               {CHANNELS.map((c) => <option key={c} value={c}>{c}</option>)}
                             </select>
@@ -480,11 +480,11 @@ function ViewEditProductButton({ id }: { id: string }) {
                           </div>
                           <div>
                             <label className="text-xs text-slate-400 mb-1 block">Effective From</label>
-                            <input type="date" value={newPrice.effectiveFrom?.slice(0, 10) ?? ''} onChange={(e) => setNewPrice({ ...newPrice, effectiveFrom: e.target.value || undefined })} className={inputCls + ' w-full'} />
+                            <input type="date" value={newPrice.effectiveFrom?.slice(0, 10) ?? ''} onChange={(e) => setNewPrice({ ...newPrice, ...(e.target.value ? { effectiveFrom: e.target.value } : { effectiveFrom: undefined as never }) })} className={inputCls + ' w-full'} />
                           </div>
                           <div>
                             <label className="text-xs text-slate-400 mb-1 block">Effective Until</label>
-                            <input type="date" value={newPrice.effectiveUntil?.slice(0, 10) ?? ''} onChange={(e) => setNewPrice({ ...newPrice, effectiveUntil: e.target.value || undefined })} className={inputCls + ' w-full'} />
+                            <input type="date" value={newPrice.effectiveUntil?.slice(0, 10) ?? ''} onChange={(e) => setNewPrice({ ...newPrice, ...(e.target.value ? { effectiveUntil: e.target.value } : { effectiveUntil: undefined as never }) })} className={inputCls + ' w-full'} />
                           </div>
                         </div>
                         <label className="flex items-center gap-2 cursor-pointer">

@@ -545,7 +545,7 @@ function EditTaxButton({ id, onRefresh }: { id: string; onRefresh: () => Promise
       setSaveLoading(true)
       await posApi.admin.updateTaxStructure(id, {
         name: detailsForm.name,
-        code: detailsForm.code || undefined,
+        ...(detailsForm.code ? { code: detailsForm.code } : {}),
         isActive: detailsForm.isActive,
       })
       setDetailsSaved(true)

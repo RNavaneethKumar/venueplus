@@ -155,8 +155,8 @@ export default function UsersPage() {
         username: formData.username,
         displayName: formData.displayName,
         pin: formData.pin,
-        mobileNumber: formData.mobileNumber,
-        email: formData.email,
+        ...(formData.mobileNumber ? { mobileNumber: formData.mobileNumber } : {}),
+        ...(formData.email ? { email: formData.email } : {}),
       })
       setShowNewUserModal(false)
       setFormData({ username: '', displayName: '', pin: '' })

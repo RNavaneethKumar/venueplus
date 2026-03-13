@@ -134,12 +134,12 @@ export default function RolesPage() {
     }
   }
 
-  const selectedRole = roles.find((r) => r.id === selectedRoleId)
+  const selectedRole = roles.find((r) => r.id === selectedRoleId) ?? null
 
   const groupedPermissions = allPermissions.reduce(
     (acc, perm) => {
       if (!acc[perm.module]) acc[perm.module] = []
-      acc[perm.module].push(perm)
+      acc[perm.module]!.push(perm)
       return acc
     },
     {} as Record<string, Permission[]>
@@ -212,7 +212,7 @@ export default function RolesPage() {
           <div className="sm:w-2/3">
             {selectedRole ? (
               <div className="space-y-4">
-                <h2 className="text-lg font-bold text-white">Permissions for {selectedRole.name}</h2>
+                <h2 className="text-lg font-bold text-white">Permissions for {selectedRole?.name}</h2>
 
                 {loadingPermissions && (
                   <div className="flex justify-center py-12">

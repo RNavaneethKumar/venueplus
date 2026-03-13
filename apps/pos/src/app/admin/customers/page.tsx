@@ -83,7 +83,7 @@ export default function CustomersPage() {
       setLoading(true)
       setError(null)
       const response = await posApi.admin.listCustomers({
-        search: debouncedSearch || undefined,
+        ...(debouncedSearch ? { search: debouncedSearch } : {}),
         limit: '50',
       })
       setCustomers(response.data.data)

@@ -69,7 +69,13 @@ export default function AlertRulesPage() {
         setError('Alert type is required');
         return;
       }
-      const createData: Record<string, unknown> = {
+      const createData: {
+        alertType: string;
+        severity?: string;
+        thresholdValue?: string;
+        comparisonOperator?: string;
+        timeWindowMinutes?: string;
+      } = {
         alertType: formData.alertType,
         severity: formData.severity,
       };

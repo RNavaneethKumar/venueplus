@@ -78,7 +78,7 @@ export default function TillCloseScreen({ session, closeType, onClosed, onCancel
         closeType,
         actualAmount: varianceData.actualAmount,
         varianceApprovedBy: staff!.id,
-        varianceNote: managerNote || undefined,
+        ...(managerNote ? { varianceNote: managerNote } : {}),
       })
       setZReport(res.data.data.zReport)
       setStage('zreport')

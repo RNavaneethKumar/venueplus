@@ -27,7 +27,7 @@ export function middleware(request: NextRequest): NextResponse {
 
 function resolveTenantSlug(host: string): string {
   // Strip port
-  const bare = host.split(':')[0]
+  const bare = host.split(':')[0] ?? ''
 
   // Bare "localhost" or IPv4 — no subdomain, use env var fallback
   if (bare === 'localhost' || /^\d+\.\d+\.\d+\.\d+$/.test(bare)) {
