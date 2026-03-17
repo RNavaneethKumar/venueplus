@@ -42,9 +42,30 @@ export interface VenueTabs {
   memberships: boolean
 }
 
+export interface PrintSettings {
+  receiptWidth:  number   // mm — default 80
+  ticketWidth:   number   // mm — default 210
+  ticketHeight:  number   // mm — default 99
+}
+
+export interface EnabledPayments {
+  cash:      boolean
+  card:      boolean
+  upi:       boolean
+  wallet:    boolean
+  gift_card: boolean
+}
+
 export interface VenueConfig {
+  venueName:       string
   requireCustomer: boolean
   tabs: VenueTabs
+  /** 'counter' = one till per device/drawer; 'user' = each user has their own float */
+  tillMode: 'counter' | 'user'
+  /** Print layout dimensions — defined in back office, shared across all POS terminals */
+  printSettings: PrintSettings
+  /** Which payment methods are available at the POS (all default to true) */
+  enabledPayments: EnabledPayments
 }
 
 export interface TillSession {
@@ -115,8 +136,12 @@ export const usePosStore = create<PosState>()(
       token: null,
       staff: null,
       venueConfig: {
+        venueName:       '',
         requireCustomer: false,
         tabs: { tickets: true, fnb: false, retail: false, wallet: false, memberships: false },
+        tillMode:        'counter',
+        printSettings:   { receiptWidth: 80, ticketWidth: 210, ticketHeight: 99 },
+        enabledPayments: { cash: true, card: true, upi: true, wallet: true, gift_card: true },
       },
       tillSession: null,
       cart: [],
@@ -128,7 +153,32 @@ export const usePosStore = create<PosState>()(
       activeTab: 'tickets',
 
       setAuth: (token, staff) => set({ token, staff }),
-      setVenueConfig: (cfg) => set({ venueConfig: cfg }),
+      setVenueConfig: (cfg) => set((state) => {
+        // Merge enabledPayments with defaults so a missing field never wipes out
+        // a known-good value (e.g. if an older API response omits the field).
+        const merged = {
+          ...state.venueConfig.enabledPayments,
+          ...(cfg.enabledPayments ?? {}),
+        }
+        // CRITICAL: preserve the same object reference when values haven't changed.
+        // Cart.tsx has a useEffect([venueConfig.enabledPayments]) that syncs local
+        // state from the store. If setVenueConfig always creates a new object, that
+        // effect fires even when nothing changed — overwriting the correct values
+        // that Cart already fetched directly from getVenueInfo().
+        const prev = state.venueConfig.enabledPayments
+        const unchanged =
+          prev.cash      === merged.cash      &&
+          prev.card      === merged.card      &&
+          prev.upi       === merged.upi       &&
+          prev.wallet    === merged.wallet    &&
+          prev.gift_card === merged.gift_card
+        return {
+          venueConfig: {
+            ...cfg,
+            enabledPayments: unchanged ? prev : merged,
+          },
+        }
+      }),
       setTillSession: (session) => set({ tillSession: session }),
       logout: () =>
         set({ token: null, staff: null, cart: [], accountId: null, accountName: null, promoCode: null, appliedPromo: null }),

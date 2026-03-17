@@ -3,14 +3,17 @@
 /**
  * TillOpenScreen — Opening float entry with numeric keypad.
  * Presents drawer selection when drawers exist (counter mode).
+ * If the current device has a linked drawer, that drawer is auto-selected
+ * and the counter picker is suppressed.
  */
 
 import { useState, useEffect } from 'react'
 import { posApi } from '@/lib/api'
+import { getCompanionDevice } from '@/lib/companionApi'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 
-interface Drawer { id: string; name: string; description: string | null }
+interface Drawer { id: string; name: string; description: string | null; deviceId?: string | null }
 
 interface Props {
   onOpened: (session: any) => void
@@ -20,17 +23,40 @@ interface Props {
 const PAD_KEYS = ['7','8','9','4','5','6','1','2','3','.','0','⌫']
 
 export default function TillOpenScreen({ onOpened, onCancel }: Props) {
-  const [amount, setAmount]         = useState('0')
-  const [drawers, setDrawers]       = useState<Drawer[]>([])
-  const [drawerId, setDrawerId]     = useState<string | undefined>(undefined)
+  const [amount, setAmount]               = useState('0')
+  const [drawers, setDrawers]             = useState<Drawer[]>([])
+  const [drawerId, setDrawerId]           = useState<string | undefined>(undefined)
   const [drawersLoaded, setDrawersLoaded] = useState(false)
-  const [loading, setLoading]       = useState(false)
+  const [loading, setLoading]             = useState(false)
+  /** Name of the drawer that was auto-selected via device link (suppresses picker) */
+  const [autoDrawerName, setAutoDrawerName] = useState<string | null>(null)
+  const [deviceName, setDeviceName]         = useState<string | null>(null)
 
   useEffect(() => {
-    posApi.till.listDrawers()
-      .then((res) => {
+    getCompanionDevice().then((d) => setDeviceName(d?.name ?? null))
+  }, [])
+
+  useEffect(() => {
+    Promise.all([
+      posApi.till.listDrawers(),
+      getCompanionDevice(),
+    ]).then(([res, device]) => {
         const active = (res.data.data as Drawer[]).filter((d) => (d as any).isActive !== false)
         setDrawers(active)
+
+        // Auto-select drawer linked to this device (if any)
+        const storedDeviceId = device?.id ?? null
+
+        if (storedDeviceId) {
+          const linked = active.find((d) => d.deviceId === storedDeviceId)
+          if (linked) {
+            setDrawerId(linked.id)
+            setAutoDrawerName(linked.name)
+            return // skip manual selection logic
+          }
+        }
+
+        // Fallback: if only one drawer, auto-select without showing picker
         if (active.length === 1) setDrawerId(active[0]!.id)
       })
       .catch(() => {/* no drawers — user mode */})
@@ -66,6 +92,21 @@ export default function TillOpenScreen({ onOpened, onCancel }: Props) {
       const res = await posApi.till.openSession(payload)
       onOpened(res.data.data)
     } catch (err: any) {
+      const code = err.response?.data?.error?.code as string | undefined
+
+      // TILL_ALREADY_OPEN: the drawer has an existing open session.
+      // Fetch that session and surface it — the user can then close it.
+      if (code === 'TILL_ALREADY_OPEN') {
+        try {
+          const existing = await posApi.till.getActiveSession(drawerId ? { drawerId } : undefined)
+          toast('An open session was found — you can now close it.', { icon: 'ℹ️' })
+          onOpened(existing.data.data)
+          return
+        } catch {
+          // Couldn't fetch the existing session — fall through to generic error
+        }
+      }
+
       toast.error(err.response?.data?.error?.message ?? 'Failed to open till')
     } finally {
       setLoading(false)
@@ -92,7 +133,11 @@ export default function TillOpenScreen({ onOpened, onCancel }: Props) {
         <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-slate-700">
           <div>
             <h2 className="font-bold text-white text-lg">Open Till</h2>
-            <p className="text-slate-400 text-xs">Enter the opening float amount</p>
+            <p className="text-slate-400 text-xs">
+              {deviceName
+                ? <>{deviceName}{autoDrawerName ? <span className="text-slate-500"> · {autoDrawerName}</span> : null}</>
+                : 'Enter the opening float amount'}
+            </p>
           </div>
           <button
             onClick={onCancel}
@@ -101,38 +146,51 @@ export default function TillOpenScreen({ onOpened, onCancel }: Props) {
         </div>
 
         <div className="px-5 pt-4 pb-2 space-y-4">
-          {/* Drawer selection (only when drawers exist) */}
-          {drawersLoaded && drawers.length > 1 && (
-            <div className="space-y-1">
-              <p className="text-xs text-slate-400 font-medium">Select Counter</p>
-              <div className="flex flex-wrap gap-2">
-                {drawers.map((d) => (
+          {/* Drawer selection */}
+          {drawersLoaded && (
+            autoDrawerName ? (
+              /* Device-linked: show read-only badge, no picker */
+              <div className="flex items-center gap-2 px-3 py-2 bg-blue-900/30 border border-blue-700/40 rounded-xl">
+                <span className="text-blue-400 text-sm">🖥</span>
+                <div>
+                  <p className="text-xs text-slate-400 leading-none">This Terminal&apos;s Counter</p>
+                  <p className="text-sm font-semibold text-white mt-0.5">{autoDrawerName}</p>
+                </div>
+                <span className="ml-auto text-green-400 text-xs font-medium">Auto-selected ✓</span>
+              </div>
+            ) : drawers.length > 1 ? (
+              /* Manual picker: multiple drawers, no device link */
+              <div className="space-y-1">
+                <p className="text-xs text-slate-400 font-medium">Select Counter</p>
+                <div className="flex flex-wrap gap-2">
+                  {drawers.map((d) => (
+                    <button
+                      key={d.id}
+                      onClick={() => setDrawerId(d.id)}
+                      className={clsx(
+                        'px-3 py-1.5 rounded-xl text-sm font-medium transition-colors',
+                        drawerId === d.id
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                      )}
+                    >
+                      {d.name}
+                    </button>
+                  ))}
                   <button
-                    key={d.id}
-                    onClick={() => setDrawerId(d.id)}
+                    onClick={() => setDrawerId(undefined)}
                     className={clsx(
                       'px-3 py-1.5 rounded-xl text-sm font-medium transition-colors',
-                      drawerId === d.id
+                      drawerId === undefined
                         ? 'bg-blue-600 text-white'
                         : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
                     )}
                   >
-                    {d.name}
+                    User Mode
                   </button>
-                ))}
-                <button
-                  onClick={() => setDrawerId(undefined)}
-                  className={clsx(
-                    'px-3 py-1.5 rounded-xl text-sm font-medium transition-colors',
-                    drawerId === undefined
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
-                  )}
-                >
-                  User Mode
-                </button>
+                </div>
               </div>
-            </div>
+            ) : null
           )}
 
           {/* Amount display */}

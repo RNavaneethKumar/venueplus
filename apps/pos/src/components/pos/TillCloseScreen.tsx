@@ -5,10 +5,11 @@
  * and Z-Report preview.
  */
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { posApi } from '@/lib/api'
 import { usePosStore } from '@/store/posStore'
 import { type TillSession } from '@/store/posStore'
+import { getCompanionDevice } from '@/lib/companionApi'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 
@@ -33,6 +34,22 @@ export default function TillCloseScreen({ session, closeType, onClosed, onCancel
   const [managerNote, setManagerNote] = useState('')
   const [zReport, setZReport]       = useState<any>(null)
   const [loading, setLoading]       = useState(false)
+  const [deviceName, setDeviceName] = useState<string | null>(null)
+  const [drawerName, setDrawerName] = useState<string | null>(null)
+
+  // Load device name from Companion and resolve drawer name from session
+  useEffect(() => {
+    getCompanionDevice().then((d) => setDeviceName(d?.name ?? null))
+    if (session.drawerId) {
+      posApi.till.listDrawers()
+        .then((res) => {
+          const match = (res.data.data as Array<{ id: string; name: string }>)
+            .find((d) => d.id === session.drawerId)
+          if (match) setDrawerName(match.name)
+        })
+        .catch(() => {})
+    }
+  }, [session.drawerId])
 
   const handleKey = (key: string) => {
     if (key === '⌫') {
@@ -294,7 +311,11 @@ export default function TillCloseScreen({ session, closeType, onClosed, onCancel
         <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-slate-700">
           <div>
             <h2 className="font-bold text-white text-lg">Close Till</h2>
-            <p className="text-slate-400 text-xs">Count the cash and close the session</p>
+            <p className="text-slate-400 text-xs">
+              {deviceName
+                ? <>{deviceName}{drawerName ? <span className="text-slate-500"> · {drawerName}</span> : null}</>
+                : 'Count the cash and close the session'}
+            </p>
           </div>
           <button
             onClick={onCancel}

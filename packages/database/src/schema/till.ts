@@ -54,6 +54,8 @@ export const cashDrawers = pgTable('cash_drawers', {
   isActive:    boolean('is_active').notNull().default(true),
   createdAt:   timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   createdBy:   uuid('created_by').references(() => users.id),
+  // Linked POS terminal (set via Admin → Devices). Enables auto-selection in TillOpenScreen.
+  deviceId:    uuid('device_id'),  // FK added by migration add_drawer_device_link.sql
 })
 
 // ── Cash Sessions ─────────────────────────────────────────────────────────────

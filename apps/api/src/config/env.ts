@@ -25,6 +25,13 @@ const envSchema = z.object({
   JWT_EXPIRES_IN: z.string().default('7d'),
   LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
   CORS_ORIGINS: z.string().default('http://localhost:3000,http://localhost:3001,http://localhost:3002'),
+  /**
+   * Base domain for multi-tenant subdomain CORS.
+   * Any origin whose hostname is exactly this domain, or is a subdomain of it,
+   * will be allowed. Example: "venueplus.io" → allows https://greenpark.venueplus.io
+   * Leave unset for single-tenant / localhost-only deployments.
+   */
+  CORS_BASE_DOMAIN: z.string().optional(),
   // OTP
   OTP_EXPIRY_SECONDS: z.coerce.number().default(300),
   OTP_MAX_ATTEMPTS: z.coerce.number().default(3),
@@ -37,13 +44,13 @@ const envSchema = z.object({
   FROM_EMAIL: z.string().email().default('noreply@venueplus.io'),
 })
 
-const parsed = envSchema.safeParse(process.env)
+export type Env = z.infer<typeof envSchema>
 
+const parsed = envSchema.safeParse(process.env)
 if (!parsed.success) {
   console.error('❌  Invalid environment variables:')
   console.error(parsed.error.flatten().fieldErrors)
   process.exit(1)
 }
 
-export const env = parsed.data
-export type Env = typeof env
+export const env: Env = parsed.data

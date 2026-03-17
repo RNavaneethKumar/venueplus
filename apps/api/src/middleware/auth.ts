@@ -102,12 +102,20 @@ export function requireRole(...roles: string[]) {
 }
 
 /**
- * Extracts venueId from header x-venue-id and attaches to request.
+ * Ensures venueId is available on the request.
+ *
+ * Multi-tenant mode: venueId is already set by resolveTenant (from the
+ * tenant registry) — this function becomes a no-op.
+ *
+ * Single-tenant / legacy mode: reads from x-venue-id header.
  */
 export async function requireVenueHeader(
   request: FastifyRequest,
   reply: FastifyReply
 ): Promise<void> {
+  // Already populated by the tenant resolution middleware — nothing to do
+  if (request.venueId) return
+
   const venueId = request.headers['x-venue-id'] as string | undefined
   if (!venueId) {
     reply.status(HTTP_STATUS.BAD_REQUEST).send({

@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { usePosStore } from '@/store/posStore'
 import { posApi } from '@/lib/api'
+import { printReceipt, printTicket } from '@/lib/companionApi'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 
@@ -13,6 +14,9 @@ const PAYMENT_METHODS = [
   { key: 'wallet',    label: 'Wallet', icon: '👛' },
   { key: 'gift_card', label: 'Gift',   icon: '🎁' },
 ]
+
+// Product types that generate a printed admission ticket
+const TICKET_PRODUCT_TYPES = new Set(['ticket', 'event_package'])
 
 const todayIso = () => new Date().toISOString().slice(0, 10)
 const fmtDate  = (iso: string) =>
@@ -277,13 +281,55 @@ export default function Cart({ onClose }: CartProps) {
   const {
     cart, staff, removeFromCart, updateQuantity, clearCart,
     cartSubtotal, cartTotal, promoDiscount,
-    accountId, visitDate, appliedPromo,
+    accountId, accountName, visitDate, appliedPromo,
     venueConfig,
   } = usePosStore()
 
-  const [paymentMethod, setPaymentMethod] = useState('cash')
+  // ── Payment settings ──────────────────────────────────────────────────────
+  // Local state so this component is always authoritative — avoids depending
+  // on whether the POS page remounted (router cache) or not.
+  const [enabledPayments, setEnabledPayments] = useState(venueConfig.enabledPayments)
+
+  // Keep in sync whenever the Zustand store is updated (e.g. by the POS page's
+  // own fetchConfig completing after Cart has already rendered).
+  useEffect(() => {
+    setEnabledPayments(venueConfig.enabledPayments)
+  }, [venueConfig.enabledPayments])
+
+  // Also pull fresh values directly from the API on every mount so payment
+  // settings always reflect the latest back-office configuration.
+  // Uses getVenueInfo (raw settings map) — works regardless of API server version
+  // and does not require a staff token, only the venue header.
+  useEffect(() => {
+    posApi.venue.getVenueInfo()
+      .then((res) => {
+        const settingsMap: Record<string, string> = res.data.data?.settings ?? {}
+        const payEnabled = (key: string) => String(settingsMap[key]) !== 'false'
+        setEnabledPayments({
+          cash:      payEnabled('payment.cash_enabled'),
+          card:      payEnabled('payment.card_enabled'),
+          upi:       payEnabled('payment.upi_enabled'),
+          wallet:    payEnabled('payment.wallet_enabled'),
+          gift_card: payEnabled('payment.gift_card_enabled'),
+        })
+      })
+      .catch((err: any) => {
+        console.warn('[Cart] venue info fetch failed:', err?.response?.status, err?.message)
+      })
+  }, [])  // eslint-disable-line react-hooks/exhaustive-deps
+
+  const [paymentMethod, setPaymentMethod] = useState(
+    () => enabledPayments.cash ? 'cash' : (
+      PAYMENT_METHODS.find(pm => enabledPayments[pm.key as keyof typeof enabledPayments])?.key ?? 'cash'
+    )
+  )
   const [processing, setProcessing]       = useState(false)
   const [lastOrderId, setLastOrderId]     = useState<string | null>(null)
+
+  // ── Split payment state ────────────────────────────────────────────────────
+  const [splitMode,        setSplitMode]        = useState(false)
+  const [splitPayments,    setSplitPayments]     = useState<{ method: string; amount: number }[]>([])
+  const [splitAmountInput, setSplitAmountInput] = useState('')
 
   const subtotal    = cartSubtotal()
   const discount    = promoDiscount()
@@ -295,14 +341,120 @@ export default function Cart({ onClose }: CartProps) {
   const requireCustomer   = venueConfig.requireCustomer
   const customerMissing   = requireCustomer && !accountId
 
+  // ── Customer display (BroadcastChannel) ───────────────────────────────────
+  const displayChannel = useRef<BroadcastChannel | null>(null)
+
+  useEffect(() => {
+    displayChannel.current = new BroadcastChannel('pos-display')
+    return () => { displayChannel.current?.close(); displayChannel.current = null }
+  }, [])
+
+  // Broadcast cart state whenever it changes
+  useEffect(() => {
+    if (!displayChannel.current) return
+    if (cart.length === 0) {
+      displayChannel.current.postMessage({ type: 'cart_clear' })
+    } else {
+      displayChannel.current.postMessage({
+        type: 'cart_update',
+        payload: {
+          items: cart.map(item => ({
+            name:        item.productName,
+            visitorType: item.visitorTypeName,
+            qty:         item.quantity,
+            lineTotal:   item.lineTotal,
+          })),
+          subtotal,
+          discount,
+          gst,
+          total,
+          accountName,
+          venueName:  venueConfig.venueName,
+          promoCode:  appliedPromo?.code ?? null,
+        },
+      })
+    }
+  }, [cart, subtotal, discount, gst, total, accountName]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Available payment methods (filtered by fresh DB values) ───────────────
+  const availablePaymentMethods = PAYMENT_METHODS.filter(
+    (pm) => enabledPayments[pm.key as keyof typeof enabledPayments] !== false
+  )
+
+  // If the currently selected method gets disabled, auto-switch to the first available one.
+  useEffect(() => {
+    const stillValid = availablePaymentMethods.some((pm) => pm.key === paymentMethod)
+    if (!stillValid && availablePaymentMethods.length > 0) {
+      setPaymentMethod(availablePaymentMethods[0]!.key)
+    }
+  }, [enabledPayments])  // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Split payment derived values ──────────────────────────────────────────
+  const splitTotal     = splitPayments.reduce((s, p) => s + p.amount, 0)
+  const splitRemaining = parseFloat((total - splitTotal).toFixed(2))
+
+  // ── Split payment helpers ─────────────────────────────────────────────────
+  const enterSplitMode = () => {
+    setSplitMode(true)
+    setSplitPayments([])
+    setSplitAmountInput(total.toFixed(2))
+  }
+
+  const exitSplitMode = () => {
+    setSplitMode(false)
+    setSplitPayments([])
+    setSplitAmountInput('')
+  }
+
+  const addSplitPayment = () => {
+    const amt = parseFloat(splitAmountInput)
+    if (isNaN(amt) || amt <= 0) { toast.error('Enter a valid amount'); return }
+    if (amt > splitRemaining + 0.001) {
+      toast.error(`Amount exceeds remaining ₹${splitRemaining.toFixed(2)}`)
+      return
+    }
+    const entry = { method: paymentMethod, amount: parseFloat(amt.toFixed(2)) }
+    const updated = [...splitPayments, entry]
+    setSplitPayments(updated)
+    const newRemaining = parseFloat((total - updated.reduce((s, p) => s + p.amount, 0)).toFixed(2))
+    setSplitAmountInput(newRemaining > 0 ? newRemaining.toFixed(2) : '')
+    // Auto-advance to first method not yet used
+    const used = updated.map(p => p.method)
+    const next = availablePaymentMethods.find(pm => !used.includes(pm.key))
+    if (next) setPaymentMethod(next.key)
+  }
+
+  const removeSplitPayment = (index: number) => {
+    const updated = splitPayments.filter((_, i) => i !== index)
+    setSplitPayments(updated)
+    const newRemaining = parseFloat((total - updated.reduce((s, p) => s + p.amount, 0)).toFixed(2))
+    setSplitAmountInput(newRemaining.toFixed(2))
+  }
+
   const handleCheckout = async () => {
     if (cart.length === 0) { toast.error('Cart is empty'); return }
     if (customerMissing) { toast.error('Please select a customer to continue'); return }
     setProcessing(true)
+
+    // Snapshot everything we need for printing BEFORE cart is cleared
+    const cartSnapshot    = [...cart]
+    const subtotalSnap    = subtotal
+    const discountSnap    = discount
+    const totalSnap       = total
+    const gstSnap         = gst
+    const paymentsSnap    = splitMode
+      ? [...splitPayments]
+      : [{ method: paymentMethod, amount: total }]
+    const cashierName     = staff?.name ?? 'Cashier'
+    const holderName      = accountName ?? undefined
+    const { venueName, printSettings } = venueConfig
+    const visitDateFmt    = new Date(visitDate + 'T00:00:00')
+      .toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+
     try {
       const res = await posApi.orders.create({
         channel: 'pos',
-        items: cart.map((item) => ({
+        items: cartSnapshot.map((item) => ({
           productId:      item.productId,
           quantity:       item.quantity,
           unitPrice:      item.unitPrice,
@@ -312,16 +464,74 @@ export default function Cart({ onClose }: CartProps) {
           resourceId:     item.resourceId,
           holdId:         item.holdId,
         })),
-        payments: [{ method: paymentMethod, amount: total }],
+        payments: paymentsSnap,
         accountId:  accountId ?? undefined,
         operatorId: staff?.id,
         promoCode:  appliedPromo?.code ?? undefined,
         notes:      !dateIsToday ? `Visit date: ${visitDate}` : undefined,
       })
+
       const order = res.data.data
+
+      // Broadcast to customer display before clearing the cart
+      displayChannel.current?.postMessage({
+        type: 'order_confirmed',
+        payload: { orderNumber: order.orderNumber, total: totalSnap, venueName },
+      })
+
       setLastOrderId(order.orderNumber)
       clearCart()
+      exitSplitMode()
       toast.success(`Order ${order.orderNumber} complete!`)
+
+      // ── Fire print jobs (fire-and-forget — never blocks the UI) ───────────
+      const ts = new Date().toISOString()
+
+      // Receipt — always print
+      void printReceipt({
+        orderNumber: order.orderNumber,
+        items: cartSnapshot.map(item => ({
+          name:           item.productName,
+          ...(item.visitorTypeName ? { visitorType: item.visitorTypeName } : {}),
+          qty:            item.quantity,
+          unitPrice:      item.unitPrice,
+          discountAmount: item.discountAmount,
+          lineTotal:      item.lineTotal,
+        })),
+        subtotal:    subtotalSnap,
+        discount:    discountSnap,
+        tax:         gstSnap,
+        total:       totalSnap,
+        payments:    paymentsSnap,
+        cashierName,
+        timestamp:   ts,
+        venueName:   venueName || undefined,
+        receiptWidth: printSettings.receiptWidth,
+        ...(appliedPromo?.code  ? { promoCode: appliedPromo.code }         : {}),
+        ...(!dateIsToday        ? { notes: `Visit date: ${visitDateFmt}` } : {}),
+      })
+
+      // Tickets — one per unit for ticketed product types
+      cartSnapshot.forEach((item, itemIdx) => {
+        if (!TICKET_PRODUCT_TYPES.has(item.productType)) return
+        for (let q = 0; q < item.quantity; q++) {
+          const ticketNumber = `${order.orderNumber}-${itemIdx + 1}-${q + 1}`
+          void printTicket({
+            orderNumber:  order.orderNumber,
+            productName:  item.productName,
+            visitDate:    visitDateFmt,
+            ticketNumber,
+            qrData:       ticketNumber,
+            venueName:    venueName || undefined,
+            ticketWidth:  printSettings.ticketWidth,
+            ticketHeight: printSettings.ticketHeight,
+            ...(item.visitorTypeName ? { visitorType: item.visitorTypeName } : {}),
+            ...(holderName           ? { holderName }                        : {}),
+            ...(item.resourceId      ? { resourceName: item.productName }    : {}),
+          })
+        }
+      })
+
     } catch (err: any) {
       toast.error(err.response?.data?.error?.message ?? 'Order failed')
     } finally {
@@ -474,15 +684,17 @@ export default function Cart({ onClose }: CartProps) {
         </div>
       </div>
 
-      {/* Payment method */}
+      {/* Payment method + checkout */}
       <div className="px-3 pb-3 shrink-0">
-        <div className="grid grid-cols-5 gap-1.5 mb-3">
-          {PAYMENT_METHODS.map((pm) => (
+
+        {/* Payment method selector — always visible */}
+        <div className="flex gap-1.5 mb-3">
+          {availablePaymentMethods.map((pm) => (
             <button
               key={pm.key}
               onClick={() => setPaymentMethod(pm.key)}
               className={clsx(
-                'flex flex-col items-center justify-center py-2 rounded-xl text-xs font-medium transition-colors min-h-[52px]',
+                'flex flex-1 flex-col items-center justify-center py-2 rounded-xl text-xs font-medium transition-colors min-h-[52px]',
                 paymentMethod === pm.key
                   ? 'bg-blue-600 text-white'
                   : 'bg-slate-800 text-slate-400 hover:bg-slate-700 active:bg-slate-600'
@@ -494,26 +706,139 @@ export default function Cart({ onClose }: CartProps) {
           ))}
         </div>
 
-        <button
-          onClick={handleCheckout}
-          disabled={processing || customerMissing}
-          className={clsx(
-            'w-full py-4 rounded-2xl font-bold text-lg transition-colors',
-            customerMissing
-              ? 'bg-slate-700 text-slate-500 cursor-not-allowed'
-              : 'bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white disabled:opacity-50 disabled:cursor-not-allowed'
-          )}
-        >
-          {processing
-            ? <span className="flex items-center justify-center gap-2">
-                <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-                Processing…
+        {splitMode ? (
+          /* ── Split payment mode ─────────────────────────────────────── */
+          <>
+            {/* Header: remaining balance + cancel */}
+            <div className="flex items-center justify-between mb-2">
+              <span className={clsx(
+                'text-sm font-semibold',
+                splitRemaining === 0 ? 'text-green-400' : 'text-amber-400'
+              )}>
+                {splitRemaining === 0 ? '✓ Fully covered' : `Remaining: ₹${splitRemaining.toFixed(2)}`}
               </span>
-            : customerMissing
-              ? 'Select a customer to charge'
-              : `Charge  ₹${total.toFixed(2)}`
-          }
-        </button>
+              <button
+                onClick={exitSplitMode}
+                className="text-xs text-slate-500 hover:text-slate-300 transition-colors"
+              >
+                ✕ Cancel Split
+              </button>
+            </div>
+
+            {/* Added payments list */}
+            {splitPayments.length > 0 && (
+              <div className="space-y-1.5 mb-2">
+                {splitPayments.map((p, i) => {
+                  const pm = PAYMENT_METHODS.find(m => m.key === p.method)
+                  return (
+                    <div
+                      key={i}
+                      className="flex items-center justify-between bg-slate-800 rounded-xl px-3 py-2"
+                    >
+                      <span className="text-sm text-slate-300">
+                        {pm?.icon} {pm?.label}
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold text-white tabular-nums">
+                          ₹{p.amount.toFixed(2)}
+                        </span>
+                        <button
+                          onClick={() => removeSplitPayment(i)}
+                          className="w-5 h-5 flex items-center justify-center text-slate-500 hover:text-red-400 transition-colors rounded"
+                        >−</button>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+
+            {/* Amount input + Add button — hidden once fully covered */}
+            {splitRemaining > 0 && (
+              <div className="flex gap-2 mb-3">
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  value={splitAmountInput}
+                  onChange={e => setSplitAmountInput(e.target.value)}
+                  onFocus={e => e.target.select()}
+                  className="flex-1 bg-slate-800 border border-slate-600 text-white rounded-xl px-3 py-2 text-sm
+                             focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30"
+                  placeholder="Amount"
+                />
+                <button
+                  onClick={addSplitPayment}
+                  className="bg-slate-700 hover:bg-slate-600 active:bg-slate-500 text-white px-4 rounded-xl text-sm font-medium transition-colors whitespace-nowrap"
+                >
+                  Add{splitAmountInput && !isNaN(parseFloat(splitAmountInput))
+                    ? ` ₹${parseFloat(splitAmountInput).toFixed(2)}`
+                    : ''}
+                </button>
+              </div>
+            )}
+
+            {/* Complete Order button */}
+            <button
+              onClick={handleCheckout}
+              disabled={splitRemaining !== 0 || processing || customerMissing}
+              className={clsx(
+                'w-full py-4 rounded-2xl font-bold text-lg transition-colors',
+                splitRemaining === 0 && !customerMissing
+                  ? 'bg-green-600 hover:bg-green-500 active:bg-green-700 text-white disabled:opacity-50 disabled:cursor-not-allowed'
+                  : 'bg-slate-700 text-slate-500 cursor-not-allowed'
+              )}
+            >
+              {processing
+                ? <span className="flex items-center justify-center gap-2">
+                    <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                    Processing…
+                  </span>
+                : customerMissing
+                  ? 'Select a customer to charge'
+                  : splitRemaining > 0
+                    ? `Add ₹${splitRemaining.toFixed(2)} more to complete`
+                    : `Complete Order ₹${total.toFixed(2)}`
+              }
+            </button>
+          </>
+        ) : (
+          /* ── Normal single-payment mode ─────────────────────────────── */
+          <div className="flex gap-2">
+            <button
+              onClick={handleCheckout}
+              disabled={processing || customerMissing}
+              className={clsx(
+                'flex-1 py-4 rounded-2xl font-bold text-lg transition-colors',
+                customerMissing
+                  ? 'bg-slate-700 text-slate-500 cursor-not-allowed'
+                  : 'bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white disabled:opacity-50 disabled:cursor-not-allowed'
+              )}
+            >
+              {processing
+                ? <span className="flex items-center justify-center gap-2">
+                    <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                    Processing…
+                  </span>
+                : customerMissing
+                  ? 'Select customer'
+                  : `Charge ₹${total.toFixed(2)}`
+              }
+            </button>
+            <button
+              onClick={enterSplitMode}
+              disabled={customerMissing}
+              title="Split payment across multiple methods"
+              className={clsx(
+                'px-4 py-4 rounded-2xl text-sm font-semibold transition-colors',
+                customerMissing
+                  ? 'bg-slate-800 text-slate-600 cursor-not-allowed'
+                  : 'bg-slate-700 hover:bg-slate-600 active:bg-slate-500 text-slate-200'
+              )}
+            >
+              Split
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )

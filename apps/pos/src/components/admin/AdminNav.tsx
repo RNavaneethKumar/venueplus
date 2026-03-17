@@ -8,7 +8,7 @@
  *                mobileOpen=true. Backdrop click and nav link taps call onMobileClose.
  *
  * Sections:
- *   Reporting        → dashboard, reports, orders, till sessions
+ *   Operations       → dashboard, orders, till sessions
  *   People           → users, roles, customers, visitor types
  *   Products         → products/tickets, tax, resources
  *   Venue            → venue details, devices, notification templates
@@ -35,11 +35,10 @@ interface NavSection {
 
 const NAV_SECTIONS: NavSection[] = [
   {
-    title: 'Reporting',
-    icon:  '📊',
+    title: 'Operations',
+    icon:  '🏠',
     items: [
       { href: '/admin/dashboard',     label: 'Dashboard',       icon: '🏠' },
-      { href: '/admin/reporting',     label: 'Reports',         icon: '📈' },
       { href: '/admin/orders',        label: 'Orders',          icon: '📋' },
       { href: '/admin/till-sessions', label: 'Till Sessions',   icon: '💰' },
     ],
@@ -68,6 +67,7 @@ const NAV_SECTIONS: NavSection[] = [
     icon:  '🏛️',
     items: [
       { href: '/admin/venues',                 label: 'Venue Settings',          icon: '⚙️' },
+      { href: '/admin/print-layout',           label: 'Print Layout',            icon: '🖨️' },
       { href: '/admin/devices',                label: 'Devices',                 icon: '📱' },
       { href: '/admin/notification-templates', label: 'Notification Templates',  icon: '🔔' },
     ],

@@ -11,7 +11,7 @@
 
 # ── Base: Node 20 + pnpm ──────────────────────────────────────────────────────
 FROM node:20-alpine AS base
-RUN corepack enable && corepack prepare pnpm@9.14.4 --activate
+RUN corepack enable && corepack prepare pnpm@10.32.1 --activate
 
 
 # ── Stage 1: install dependencies ────────────────────────────────────────────
@@ -49,7 +49,7 @@ RUN pnpm --filter @venueplus/shared   build \
 # Produce a self-contained production bundle.
 # pnpm deploy resolves all workspace dependencies and copies their built
 # dist/ directories into /deploy/node_modules/@venueplus/* — no symlinks.
-RUN pnpm deploy --filter=@venueplus/api --prod /deploy
+RUN pnpm deploy --legacy --filter=@venueplus/api --prod /deploy
 
 
 # ── Stage 3: production runtime ──────────────────────────────────────────────

@@ -3,25 +3,72 @@ import axios from 'axios'
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api/v1'
 
 // ── Tenant slug resolution ────────────────────────────────────────────────────
-// Multi-tenant: derived from the subdomain at runtime (e.g. greenpark.venueplus.io → "greenpark")
-// Single-tenant / localhost dev: falls back to NEXT_PUBLIC_TENANT_SLUG env var
-// Legacy single-tenant: NEXT_PUBLIC_VENUE_ID kept for backward compat on the
-// x-venue-id header so existing routes that still use requireVenueHeader work.
+//
+// Resolution order (client-side):
+//   1. Subdomain   — "greenpark.venueplus.io" → "greenpark"
+//   2. Cookie      — "venueplus_tenant" set by Next.js middleware OR by the
+//                    async initializer below once it fetches from the API route
+//   3. API route   — GET /api/runtime-config runs in Node.js (not Edge Runtime)
+//                    so it ALWAYS has access to process.env.TENANT_SLUG even in
+//                    Docker standalone mode. This is the reliable production path
+//                    because Next.js Edge Middleware cannot read non-NEXT_PUBLIC_
+//                    env vars in the standalone build, so the cookie may be empty.
+//   4. Build-time  — NEXT_PUBLIC_TENANT_SLUG (baked; empty in distributed image)
+//
+// Server-side (SSR/API routes): reads process.env directly — always works.
 
+/** Synchronous slug read — used for SSR and as a fast client-side path. */
 export function getTenantSlug(): string {
   if (typeof window === 'undefined') {
-    return process.env.NEXT_PUBLIC_TENANT_SLUG ?? ''
+    // Node.js runtime: always has full process.env access
+    return process.env['TENANT_SLUG'] ?? process.env['NEXT_PUBLIC_TENANT_SLUG'] ?? ''
   }
-  const hostname = window.location.hostname  // e.g. "greenpark.venueplus.io"
+
+  const hostname = window.location.hostname
   const parts    = hostname.split('.')
 
-  // Treat "localhost" and bare IPs as single-tenant dev — use env var fallback
-  if (parts.length < 2 || hostname === 'localhost' || /^\d+\.\d+\.\d+\.\d+$/.test(hostname)) {
-    return process.env.NEXT_PUBLIC_TENANT_SLUG ?? ''
+  // Subdomain present → extract directly (e.g. "greenpark.venueplus.io")
+  if (parts.length >= 2 && hostname !== 'localhost' && !/^\d+\.\d+\.\d+\.\d+$/.test(hostname)) {
+    return parts[0] ?? ''
   }
 
-  // "greenpark.venueplus.io" → "greenpark"
-  return parts[0] ?? ''
+  // No subdomain: read cookie (set by middleware when it has env access, or by resolveSlug below)
+  const cookieMatch = document.cookie.match(/(?:^|;\s*)venueplus_tenant=([^;]+)/)
+  if (cookieMatch?.[1]) return decodeURIComponent(cookieMatch[1])
+
+  // Build-time fallback (empty string in the distributed Docker image)
+  return process.env['NEXT_PUBLIC_TENANT_SLUG'] ?? ''
+}
+
+// One-shot promise: resolves to the tenant slug, guaranteed to work in Docker.
+// After the first call the result is cached; all subsequent awaits are instant.
+let _slugCache: Promise<string> | null = null
+
+function resolveSlug(): Promise<string> {
+  if (_slugCache) return _slugCache
+
+  _slugCache = (async (): Promise<string> => {
+    // Fast path: synchronous resolution already has the slug
+    const sync = getTenantSlug()
+    if (sync) return sync
+
+    // Async path: /api/runtime-config runs in Node.js and always has
+    // process.env.TENANT_SLUG — this works even when Edge Middleware doesn't.
+    try {
+      const res  = await fetch('/api/runtime-config', { cache: 'no-store' })
+      const body = await res.json() as { tenantSlug: string }
+      if (body.tenantSlug) {
+        // Persist to cookie so synchronous reads work on subsequent page loads
+        document.cookie =
+          `venueplus_tenant=${encodeURIComponent(body.tenantSlug)}; path=/; SameSite=Lax`
+        return body.tenantSlug
+      }
+    } catch { /* bridge/network unavailable — proceed with empty slug */ }
+
+    return ''
+  })()
+
+  return _slugCache
 }
 
 export const apiClient = axios.create({
@@ -29,19 +76,22 @@ export const apiClient = axios.create({
   headers: { 'Content-Type': 'application/json' },
 })
 
-// Attach JWT + tenant slug on every request
-apiClient.interceptors.request.use((config) => {
+// Attach JWT + tenant slug on every request.
+// Async interceptor: the very first call awaits slug resolution (one fetch to
+// /api/runtime-config if the cookie is missing); all subsequent calls return
+// instantly from the in-memory cache.
+apiClient.interceptors.request.use(async (config) => {
   if (typeof window !== 'undefined') {
     const token = window.localStorage.getItem('pos_token')
     if (token) config.headers.Authorization = `Bearer ${token}`
   }
 
-  // Multi-tenant header — API uses this to route to the right database
-  const slug = getTenantSlug()
+  // Resolve slug: sync on server-side (SSR), async on client-side
+  const slug = typeof window === 'undefined' ? getTenantSlug() : await resolveSlug()
   if (slug) config.headers['x-tenant-slug'] = slug
 
   // Legacy header kept for backward compat with requireVenueHeader()
-  const venueId = process.env.NEXT_PUBLIC_VENUE_ID
+  const venueId = process.env['NEXT_PUBLIC_VENUE_ID']
   if (venueId) config.headers['x-venue-id'] = venueId
 
   return config
@@ -93,6 +143,8 @@ export const posApi = {
   },
   venue: {
     getPosConfig: () => apiClient.get('/venue/pos-config'),
+    /** Returns the full venue record including the raw settings map. */
+    getVenueInfo: () => apiClient.get('/venue'),
   },
   accounts: {
     get:    (id: string) => apiClient.get(`/accounts/${id}`),
@@ -121,8 +173,8 @@ export const posApi = {
   till: {
     openSession: (data: { drawerId?: string; openingAmount: number; openingDenominations?: Record<string, number> }) =>
       apiClient.post('/till/sessions', data),
-    getActiveSession: (drawerId?: string) =>
-      apiClient.get('/till/sessions/active' + (drawerId ? `?drawerId=${drawerId}` : '')),
+    getActiveSession: (params?: { drawerId?: string; deviceId?: string }) =>
+      apiClient.get('/till/sessions/active', { params }),
     listSessions: (params?: Record<string, string>) =>
       apiClient.get('/till/sessions', { params }),
     getSession: (id: string) =>
@@ -144,7 +196,7 @@ export const posApi = {
       apiClient.get('/till/drawers'),
     createDrawer: (data: { name: string; description?: string }) =>
       apiClient.post('/till/drawers', data),
-    updateDrawer: (id: string, data: { name?: string; description?: string; isActive?: boolean }) =>
+    updateDrawer: (id: string, data: { name?: string; description?: string; isActive?: boolean; deviceId?: string | null }) =>
       apiClient.patch(`/till/drawers/${id}`, data),
   },
   admin: {
@@ -256,6 +308,14 @@ export const posApi = {
     // Reports
     getReportSummary: (from?: string, to?: string) =>
       apiClient.get('/admin/reports/summary', { params: { from, to } }),
+    reports: {
+      dailyTrend:   (from?: string, to?: string) =>
+        apiClient.get('/admin/reports/daily-trend',   { params: { from, to } }),
+      products:     (from?: string, to?: string) =>
+        apiClient.get('/admin/reports/products',      { params: { from, to } }),
+      visitorTypes: (from?: string, to?: string) =>
+        apiClient.get('/admin/reports/visitor-types', { params: { from, to } }),
+    },
   },
   // Device licensing — public endpoints (no JWT needed, only x-tenant-slug)
   device: {

@@ -60,12 +60,11 @@ export async function reportRoutes(fastify: FastifyInstance): Promise<void> {
 
     const [result] = await db
       .select({
-        totalOrders: sql<number>`COUNT(DISTINCT ${orders.id})`,
-        totalRevenue: sql<string>`COALESCE(SUM(${orders.totalAmount}), 0)`,
-        onlineOrders: sql<number>`COUNT(DISTINCT ${orders.id}) FILTER (WHERE ${orders.sourceChannel} = 'online')`,
-        posOrders: sql<number>`COUNT(DISTINCT ${orders.id}) FILTER (WHERE ${orders.sourceChannel} = 'pos')`,
-        kioskOrders: sql<number>`COUNT(DISTINCT ${orders.id}) FILTER (WHERE ${orders.sourceChannel} = 'kiosk')`,
-        mobileOrders: sql<number>`COUNT(DISTINCT ${orders.id}) FILTER (WHERE ${orders.sourceChannel} = 'mobile')`,
+        orderCount:    sql<string>`COUNT(DISTINCT ${orders.id})`,
+        totalRevenue:  sql<string>`COALESCE(SUM(${orders.totalAmount}), 0)`,
+        posRevenue:    sql<string>`COALESCE(SUM(${orders.totalAmount}) FILTER (WHERE ${orders.sourceChannel} = 'pos'), 0)`,
+        onlineRevenue: sql<string>`COALESCE(SUM(${orders.totalAmount}) FILTER (WHERE ${orders.sourceChannel} = 'online'), 0)`,
+        kioskRevenue:  sql<string>`COALESCE(SUM(${orders.totalAmount}) FILTER (WHERE ${orders.sourceChannel} = 'kiosk'), 0)`,
       })
       .from(orders)
       .where(
@@ -79,15 +78,12 @@ export async function reportRoutes(fastify: FastifyInstance): Promise<void> {
     return reply.send({
       success: true,
       data: {
-        date: today,
-        totalOrders: Number(result?.totalOrders ?? 0),
-        totalRevenue: result?.totalRevenue ?? '0',
-        byChannel: {
-          online: Number(result?.onlineOrders ?? 0),
-          pos: Number(result?.posOrders ?? 0),
-          kiosk: Number(result?.kioskOrders ?? 0),
-          mobile: Number(result?.mobileOrders ?? 0),
-        },
+        date:          today,
+        orderCount:    Number(result?.orderCount    ?? 0),
+        totalRevenue:  Number(result?.totalRevenue  ?? 0),
+        posRevenue:    Number(result?.posRevenue    ?? 0),
+        onlineRevenue: Number(result?.onlineRevenue ?? 0),
+        kioskRevenue:  Number(result?.kioskRevenue  ?? 0),
       },
     })
   })

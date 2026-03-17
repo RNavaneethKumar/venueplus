@@ -1,93 +1,71 @@
 # =============================================================================
-# VenuePlus — Docker Compose
+# VenuePlus — Docker Compose (Distribution)
 #
-# Runs the API (Fastify) and POS (Next.js) containers.
-# The database is intentionally excluded — point DATABASE_URL and
-# REGISTRY_DATABASE_URL at an external Postgres instance (e.g. Neon, Render,
-# or a local Postgres running outside Docker).
+# Prerequisites:
+#   - Docker Desktop installed (https://www.docker.com/products/docker-desktop)
 #
-# Quick start:
-#   1. Copy .env.docker to .env.docker.local and fill in your values
-#   2. docker compose --env-file .env.docker.local up --build
+# Usage:
+#   docker compose up -d
+#   Open: http://localhost:3001
 #
-# For production images (no rebuild):
-#   docker compose --env-file .env.docker.local up -d
+# To stop:   docker compose down
+# To update: docker compose pull && docker compose up -d
+#
+# For developers building from source, use:
+#   docker compose -f docker-compose.build.yml --env-file .env.docker.local up --build
 # =============================================================================
 
 services:
 
-  # ── API (Fastify) ───────────────────────────────────────────────────────────
   api:
-    build:
-      context: .
-      dockerfile: apps/api/Dockerfile
-    image: venueplus-api:latest
+    image: rnavaneethkumar/venueplus-api:latest
     restart: unless-stopped
     ports:
-      - "${API_PORT:-4000}:4000"
+      - "4000:4000"
     environment:
       NODE_ENV: production
       PORT: 4000
-      LOG_LEVEL: ${LOG_LEVEL:-info}
-
-      # ── Database ─────────────────────────────────────────────────────────
-      # Main application database (single-tenant) or registry database connection
-      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
-
-      # Multi-tenant registry — maps tenant slugs to per-tenant DB URLs.
-      # Leave unset to run in single-tenant mode.
-      REGISTRY_DATABASE_URL: ${REGISTRY_DATABASE_URL:-}
-
-      # Superuser URL for CREATE DATABASE during tenant provisioning.
-      # Required only if you use the "Provision new database" feature in the
-      # global admin UI. Must have CREATEDB privilege.
-      POSTGRES_ADMIN_URL: ${POSTGRES_ADMIN_URL:-}
-
-      # Path to the database/ folder inside the container (do not change).
+      DATABASE_URL: postgresql://neondb_owner:npg_SUeWvdo30MBf@ep-winter-hall-a130kqon-pooler.ap-southeast-1.aws.neon.tech/venueplus_demo?sslmode=require
+      REGISTRY_DATABASE_URL: postgresql://neondb_owner:npg_SUeWvdo30MBf@ep-winter-hall-a130kqon-pooler.ap-southeast-1.aws.neon.tech/venueplus_registry?sslmode=require
+      POSTGRES_ADMIN_URL: postgresql://neondb_owner:npg_SUeWvdo30MBf@ep-winter-hall-a130kqon-pooler.ap-southeast-1.aws.neon.tech/postgres?sslmode=require
       DATABASE_SCRIPTS_PATH: /app/database
-
-      # ── Auth ─────────────────────────────────────────────────────────────
-      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
-      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
-
-      # ── Global Admin ─────────────────────────────────────────────────────
-      # One-time secret to seed the first global admin account.
-      # Remove after seeding.
-      GLOBAL_ADMIN_SEED_SECRET: ${GLOBAL_ADMIN_SEED_SECRET:-}
-
-      # ── CORS ─────────────────────────────────────────────────────────────
-      # Comma-separated list of allowed frontend origins.
-      # Example: https://pos.venueplus.io,https://kiosk.venueplus.io
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3001}
-
-      # ── Notifications ────────────────────────────────────────────────────
-      SMS_PROVIDER: ${SMS_PROVIDER:-console}
-      EMAIL_PROVIDER: ${EMAIL_PROVIDER:-console}
-      FROM_EMAIL: ${FROM_EMAIL:-noreply@venueplus.io}
-
+      JWT_SECRET: 6fafbb696d3704d687a61a3bbc63a05dff465269bb10d859ebab7443581a12cb
+      JWT_EXPIRES_IN: 7d
+      GLOBAL_ADMIN_SEED_SECRET: 1134434c30466bea41074b409ed1d0a9
+      CORS_ORIGINS: http://localhost:3001
+      # Allows *.localhost for local Docker testing (e.g. demo.localhost:3001).
+      # When deploying to production change this to your real base domain:
+      #   CORS_BASE_DOMAIN: venueplus.in
+      CORS_BASE_DOMAIN: localhost
+      SMS_PROVIDER: console
+      EMAIL_PROVIDER: console
+      FROM_EMAIL: noreply@venueplus.io
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:4000/health || exit 1"]
-      interval: 30s
+      # Uses Node's built-in http module — no wget/curl dependency required.
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:4000/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))\""]
+      interval: 15s
       timeout: 10s
-      retries: 5
-      start_period: 20s
+      retries: 6
+      # Give the API plenty of time on cold start (Neon SSL handshake can be slow).
+      start_period: 60s
 
-
-  # ── POS (Next.js) ───────────────────────────────────────────────────────────
   pos:
-    build:
-      context: .
-      dockerfile: apps/pos/Dockerfile
-      args:
-        # NEXT_PUBLIC_* vars are baked into the JS bundle at build time.
-        # Changing these requires a rebuild (docker compose build pos).
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:4000/api/v1}
-        NEXT_PUBLIC_VENUE_ID: ${NEXT_PUBLIC_VENUE_ID:-}
-        NEXT_PUBLIC_TENANT_SLUG: ${NEXT_PUBLIC_TENANT_SLUG:-}
-    image: venueplus-pos:latest
+    image: rnavaneethkumar/venueplus-pos:latest
     restart: unless-stopped
     ports:
-      - "${POS_PORT:-3001}:3001"
+      - "3001:3001"
+    environment:
+      # Runtime tenant slug — tells the POS which tenant to connect to when
+      # running on plain localhost (no subdomain). Change this to match your
+      # tenant slug without rebuilding the image.
+      TENANT_SLUG: demo
+      # Optional: pre-configure the device license key for this terminal.
+      # When set, any browser that opens the POS is auto-activated silently —
+      # no manual key entry needed. Generate a key in Back Office → Devices.
+      # DEVICE_LICENSE_KEY: VP-XXXX-XXXX-XXXX
+    # The POS is a browser app — it calls the API client-side, not at container
+    # startup. Using service_started means the POS comes up immediately without
+    # waiting for the API health check to pass.
     depends_on:
       api:
-        condition: service_healthy
+        condition: service_started

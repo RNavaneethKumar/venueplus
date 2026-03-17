@@ -43,13 +43,16 @@ CREATE TABLE promo_codes (
     description               TEXT,
     discount_type             discount_type NOT NULL,
     discount_value            NUMERIC(12,2) NOT NULL,
+    minimum_order_amount      NUMERIC(12,2),
     max_uses                  INT,
-    max_uses_per_customer     INT,
+    max_uses_per_customer     INT NOT NULL DEFAULT 1,
+    current_uses              INT NOT NULL DEFAULT 0,
     is_stackable              BOOLEAN NOT NULL DEFAULT false,
-    effective_from            TIMESTAMPTZ,
+    effective_from            TIMESTAMPTZ NOT NULL DEFAULT now(),
     effective_until           TIMESTAMPTZ,
     is_active                 BOOLEAN NOT NULL DEFAULT true,
     created_at                TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at                TIMESTAMPTZ NOT NULL DEFAULT now(),
     created_by                UUID REFERENCES users(id)
 );
 

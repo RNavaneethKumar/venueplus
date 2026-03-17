@@ -51,7 +51,7 @@ BEGIN;
 \echo '→ Step 5/6: Functions & Triggers'
 \i 005_functions/001_functions.sql
 
-\echo '→ Step 6/6: Seed Data'
+\echo '→ Step 6/7: Seed Data'
 \i 006_seed_data/001_governance.sql
 \i 006_seed_data/002_taxation_visitors.sql
 \i 006_seed_data/003_resources_devices.sql
@@ -61,6 +61,9 @@ BEGIN;
 \i 006_seed_data/007_membership_wallet_fnb_retail.sql
 \i 006_seed_data/008_pricing_crm.sql
 \i 006_seed_data/009_till.sql
+
+\echo '→ Step 7/7: Migrations'
+\i 007_migrations/001_remove_unused_settings.sql
 
 COMMIT;
 

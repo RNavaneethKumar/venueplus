@@ -19,7 +19,12 @@ import {
   cashSessions,
   eq,
   and,
+  or,
   gt,
+  gte,
+  lte,
+  isNull,
+  ilike,
   sql,
   type DB,
 } from '@venueplus/database'
@@ -88,7 +93,7 @@ export async function orderRoutes(fastify: FastifyInstance): Promise<void> {
           eq(promoCodes.venueId, venueId),
           eq(promoCodes.code, codeUpper),
           eq(promoCodes.isActive, true),
-          gt(promoCodes.effectiveUntil, now)
+          or(isNull(promoCodes.effectiveUntil), gt(promoCodes.effectiveUntil, now))
         ),
       })
 
@@ -166,7 +171,7 @@ export async function orderRoutes(fastify: FastifyInstance): Promise<void> {
           eq(promoCodes.venueId, venueId),
           eq(promoCodes.code, codeUpper),
           eq(promoCodes.isActive, true),
-          gt(promoCodes.effectiveUntil, now)
+          or(isNull(promoCodes.effectiveUntil), gt(promoCodes.effectiveUntil, now))
         ),
       })
 
@@ -538,33 +543,52 @@ export async function orderRoutes(fastify: FastifyInstance): Promise<void> {
    */
   fastify.get('/', { preHandler: [requireVenueHeader] }, async (request, reply) => {
     const db = resolveDb(request)
-    const { status, channel, accountId, page = '1', limit = '20' } = request.query as Record<
-      string,
-      string
-    >
+    const {
+      status,
+      channel,
+      accountId,
+      search,
+      dateFrom,
+      dateTo,
+      page  = '1',
+      limit = '20',
+    } = request.query as Record<string, string>
 
-    const pageNum = parseInt(page, 10)
+    const pageNum  = parseInt(page, 10)
     const pageSize = Math.min(parseInt(limit, 10), 100)
-    const offset = (pageNum - 1) * pageSize
-    const venueId = request.venueId!
+    const offset   = (pageNum - 1) * pageSize
+    const venueId  = request.venueId!
 
     const conditions = [eq(orders.venueId, venueId)]
-    if (status) conditions.push(eq(orders.status, status as any))
-    if (channel) conditions.push(eq(orders.sourceChannel, channel as any))
+    if (status)    conditions.push(eq(orders.status, status as any))
+    if (channel)   conditions.push(eq(orders.sourceChannel, channel as any))
     if (accountId) conditions.push(eq(orders.accountId, accountId))
+    if (search)    conditions.push(ilike(orders.orderNumber, `%${search}%`))
+    if (dateFrom)  conditions.push(gte(orders.createdAt, new Date(dateFrom)))
+    if (dateTo)    conditions.push(lte(orders.createdAt, new Date(`${dateTo}T23:59:59`)))
 
-    const rows = await db
-      .select()
-      .from(orders)
-      .where(and(...conditions))
-      .orderBy(sql`${orders.createdAt} DESC`)
-      .limit(pageSize)
-      .offset(offset)
+    const where = and(...conditions)
+
+    const [rows, countResult] = await Promise.all([
+      db
+        .select()
+        .from(orders)
+        .where(where)
+        .orderBy(sql`${orders.createdAt} DESC`)
+        .limit(pageSize)
+        .offset(offset),
+      db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(orders)
+        .where(where),
+    ])
+
+    const total = countResult[0]?.count ?? 0
 
     return reply.send({
       success: true,
       data: rows,
-      meta: { page: pageNum, limit: pageSize },
+      meta: { page: pageNum, limit: pageSize, total },
     })
   })
 }

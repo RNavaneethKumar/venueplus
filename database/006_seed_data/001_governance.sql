@@ -135,56 +135,12 @@ INSERT INTO venue_feature_flags (venue_id, feature_key, is_enabled, enabled_at) 
 -- ── Venue Settings ───────────────────────────────────────────────────────────
 
 INSERT INTO venue_settings (venue_id, setting_key, setting_value, updated_by) VALUES
--- Auth
-(:vid, 'auth.otp_required_for_login',     'true',    :uid_admin),
-(:vid, 'auth.allow_password_login',        'false',   :uid_admin),
-(:vid, 'auth.otp_expiry_minutes',          '10',      :uid_admin),
-(:vid, 'auth.max_otp_attempts',            '3',       :uid_admin),
-(:vid, 'auth.otp_channels',               '["sms"]', :uid_admin),
-(:vid, 'auth.session_ttl_hours',           '24',      :uid_admin),
--- Accounts
-(:vid, 'account.allow_anonymous_otc_orders',                'true',  :uid_admin),
-(:vid, 'account.require_person_assignment_before_entry',    'true',  :uid_admin),
--- Waivers
-(:vid, 'waiver.otp_required_for_signing',  'true',    :uid_admin),
-(:vid, 'waiver.required_for_walkin',       'true',    :uid_admin),
-(:vid, 'waiver.expiry_months',             '12',      :uid_admin),
--- Ticketing
-(:vid, 'ticketing.max_advance_booking_days',          '90',           :uid_admin),
-(:vid, 'ticketing.late_entry_grace_period_minutes',   '15',           :uid_admin),
-(:vid, 'ticketing.max_tickets_per_online_order',      '20',           :uid_admin),
-(:vid, 'ticketing.cancellation_policy',               '"credit_only"',:uid_admin),
-(:vid, 'ticketing.cancellation_cutoff_hours',         '24',           :uid_admin),
--- Gate
-(:vid, 'gate.strict_mode_enabled',         'true',    :uid_admin),
-(:vid, 'gate.allow_manual_override',       'true',    :uid_admin),
-(:vid, 'gate.exit_scan_enabled',           'true',    :uid_admin),
-(:vid, 'gate.offline_grace_minutes',       '30',      :uid_admin),
--- Checkout
-(:vid, 'checkout.online_hold_ttl_minutes', '10',      :uid_admin),
-(:vid, 'checkout.otc_hold_ttl_minutes',    '5',       :uid_admin),
-(:vid, 'checkout.allow_split_payment',     'true',    :uid_admin),
 -- Payments
 (:vid, 'payment.cash_enabled',             'true',    :uid_admin),
 (:vid, 'payment.card_enabled',             'true',    :uid_admin),
-(:vid, 'payment.upi_enabled',             'true',    :uid_admin),
+(:vid, 'payment.upi_enabled',              'true',    :uid_admin),
 (:vid, 'payment.wallet_enabled',           'true',    :uid_admin),
 (:vid, 'payment.gift_card_enabled',        'true',    :uid_admin),
--- Notifications
-(:vid, 'notification.booking_confirmation_channel', '["sms","email"]', :uid_admin),
-(:vid, 'notification.pre_visit_reminder_enabled',   'true',            :uid_admin),
-(:vid, 'notification.pre_visit_reminder_hours',     '24',              :uid_admin),
--- Invoicing
-(:vid, 'invoice.auto_generate_on_payment', 'true',    :uid_admin),
-(:vid, 'invoice.number_prefix',            '"FZ"',    :uid_admin),
-(:vid, 'invoice.show_tax_breakdown',       'true',    :uid_admin),
--- Reporting
-(:vid, 'reporting.daily_rollup_time',      '"02:00"', :uid_admin),
-(:vid, 'reporting.live_headcount_enabled', 'true',    :uid_admin),
 -- Till / Cash Management
-(:vid, 'pos.till_mode',                         '"counter"', :uid_admin),  -- 'counter' | 'user'
-(:vid, 'pos.require_till',                      'false',     :uid_admin),  -- enforce open session before sale
-(:vid, 'pos.variance_threshold',                '100',       :uid_admin),  -- INR: acceptable variance
-(:vid, 'pos.opening_float_default',             '500',       :uid_admin),  -- INR: default opening float
-(:vid, 'pos.blind_close_enabled',               'true',      :uid_admin),  -- allow blind-close procedure
-(:vid, 'pos.cash_movement_approval_threshold',  '1000',      :uid_admin);  -- INR: movements above this need approval
+(:vid, 'till_close_mode',                       'normal',    :uid_admin),  -- 'normal' | 'blind'
+(:vid, 'pos.till_mode',                         'counter',   :uid_admin);  -- 'counter' | 'user'

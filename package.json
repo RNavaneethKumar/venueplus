@@ -4,7 +4,10 @@
   "private": true,
   "description": "VenuePlus — All-in-one SaaS platform for entertainment venues",
   "workspaces": [
-    "apps/*",
+    "apps/api",
+    "apps/ecommerce",
+    "apps/kiosk",
+    "apps/pos",
     "packages/*"
   ],
   "scripts": {
@@ -22,15 +25,15 @@
     "ecommerce:dev": "turbo run dev --filter=@venueplus/ecommerce"
   },
   "devDependencies": {
-    "turbo": "^2.3.0",
-    "typescript": "^5.7.2",
     "@types/node": "^22.10.0",
+    "eslint": "^9.17.0",
     "prettier": "^3.4.2",
-    "eslint": "^9.17.0"
+    "turbo": "^2.3.0",
+    "typescript": "^5.7.2"
   },
   "engines": {
     "node": ">=20.0.0",
     "pnpm": ">=9.0.0"
   },
-  "packageManager": "pnpm@9.14.4"
+  "packageManager": "pnpm@10.32.1"
 }

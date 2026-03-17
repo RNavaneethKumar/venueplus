@@ -71,19 +71,48 @@ export async function venueRoutes(fastify: FastifyInstance): Promise<void> {
     '/pos-config',
     { preHandler: [requireStaff, requireVenueHeader] },
     async (request, reply) => {
-    const db = resolveDb(request)
+      const db      = resolveDb(request)
       const venueId = request.venueId!
 
-      const flags = await db
-        .select()
-        .from(venueFeatureFlags)
-        .where(eq(venueFeatureFlags.venueId, venueId))
+      // Fetch venue record + feature flags + settings in parallel
+      const [venueRow, flags, settings] = await Promise.all([
+        db.query.venues.findFirst({ where: eq(venues.id, venueId) }),
+        db.select().from(venueFeatureFlags).where(eq(venueFeatureFlags.venueId, venueId)),
+        db.select().from(venueSettings).where(eq(venueSettings.venueId, venueId)),
+      ])
 
-      const flagsMap = Object.fromEntries(flags.map((f) => [f.featureKey, f.isEnabled]))
+      const flagsMap    = Object.fromEntries(flags.map((f) => [f.featureKey, f.isEnabled]))
+      const settingsMap = Object.fromEntries(settings.map((s) => [s.settingKey, s.settingValue]))
+
+      // pos.till_mode may be stored as a plain string ('user') or JSON-encoded ('"user"').
+      const rawTillMode = settingsMap['pos.till_mode']
+      let parsedTillMode = 'counter'
+      if (rawTillMode) {
+        try { parsedTillMode = JSON.parse(rawTillMode) } catch { parsedTillMode = rawTillMode }
+      }
+      const tillMode: 'counter' | 'user' = parsedTillMode === 'user' ? 'user' : 'counter'
+
+      // Print layout — stored as venue settings, defaults to standard paper sizes
+      const parseNum = (raw: string | undefined, fallback: number) => {
+        const n = parseFloat(raw ?? '')
+        return isNaN(n) ? fallback : n
+      }
+      const printSettings = {
+        receiptWidth:  parseNum(settingsMap['print.receipt_width'],  80),
+        ticketWidth:   parseNum(settingsMap['print.ticket_width'],  210),
+        ticketHeight:  parseNum(settingsMap['print.ticket_height'],  99),
+      }
+
+      // Payment method availability — default all to enabled if setting absent.
+      // Values may be stored as boolean false or string 'false' depending on how
+      // they were written, so normalise via String() before comparing.
+      const paymentEnabled = (key: string) => String(settingsMap[key]) !== 'false'
 
       return reply.send({
         success: true,
         data: {
+          // Venue display name (used on receipts / tickets)
+          venueName: venueRow?.name ?? '',
           // Tab visibility — default tickets to true, rest default off
           tabs: {
             tickets:     flagsMap['pos.tickets']     ?? true,
@@ -94,6 +123,18 @@ export async function venueRoutes(fastify: FastifyInstance): Promise<void> {
           },
           // Order behaviour
           requireCustomer: flagsMap['pos.require_customer'] ?? false,
+          // Till session strategy: 'counter' (device-level) or 'user' (per-user float)
+          tillMode,
+          // Print layout — shared across all POS terminals, managed in back office
+          printSettings,
+          // Which payment methods are available at the POS
+          enabledPayments: {
+            cash:      paymentEnabled('payment.cash_enabled'),
+            card:      paymentEnabled('payment.card_enabled'),
+            upi:       paymentEnabled('payment.upi_enabled'),
+            wallet:    paymentEnabled('payment.wallet_enabled'),
+            gift_card: paymentEnabled('payment.gift_card_enabled'),
+          },
         },
       })
     },

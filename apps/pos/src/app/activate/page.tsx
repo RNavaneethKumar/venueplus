@@ -4,11 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import toast from 'react-hot-toast'
 import { posApi, getTenantSlug } from '@/lib/api'
-
-const DEVICE_TOKEN_KEY = 'venueplus_device_token'
-const DEVICE_ID_KEY    = 'venueplus_device_id'
-const DEVICE_NAME_KEY  = 'venueplus_device_name'
-const DEVICE_TYPE_KEY  = 'venueplus_device_type'
+import { getCompanionDevice, saveToCompanion, isCompanionAvailable } from '@/lib/companionApi'
 
 /** Auto-formats raw input into VP-XXXX-XXXX-XXXX as the user types. */
 function formatKey(raw: string): string {
@@ -22,34 +18,78 @@ function isComplete(formatted: string): boolean {
   return formatted.replace(/-/g, '').length === 14
 }
 
+// ─── Auto-activation ─────────────────────────────────────────────────────────
+//
+// If DEVICE_LICENSE_KEY is set in the container's environment, the Next.js API
+// route /api/device/env-key returns it server-side without exposing it in the
+// JS bundle. The activate page calls this on mount and silently activates the
+// terminal — any browser on this machine gets licensed automatically.
+
+async function tryAutoActivate(): Promise<{ success: boolean; deviceName?: string }> {
+  try {
+    const res = await fetch('/api/device/env-key')
+    const { key } = await res.json() as { key: string | null }
+    if (!key) return { success: false }
+
+    const activateRes = await posApi.device.activate(key)
+    const { deviceToken, deviceId, deviceName, deviceType } = activateRes.data.data
+    await saveToCompanion({ token: deviceToken, id: deviceId, name: deviceName, type: deviceType })
+    return { success: true, deviceName }
+  } catch {
+    return { success: false }
+  }
+}
+
 export default function ActivatePage() {
   const router  = useRouter()
-  const [keyValue, setKeyValue] = useState('')
-  const [loading, setLoading]   = useState(false)
-  const [done, setDone]         = useState(false)
-  const [deviceName, setDeviceName] = useState('')
+  const [keyValue,           setKeyValue]           = useState('')
+  const [loading,            setLoading]            = useState(false)
+  const [autoLoading,        setAutoLoading]        = useState(true)
+  const [done,               setDone]               = useState(false)
+  const [deviceName,         setDeviceName]         = useState('')
+  const [companionMissing,   setCompanionMissing]   = useState(false)
 
   const tenantSlug = getTenantSlug()
   const tenantName = tenantSlug
     ? tenantSlug.charAt(0).toUpperCase() + tenantSlug.slice(1).replace(/-/g, ' ')
     : null
 
-  // If already activated, skip straight to login
+  // ── On mount: check companion for existing device, then try auto-activation ─
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      if (window.localStorage.getItem(DEVICE_TOKEN_KEY)) router.replace('/login')
+    async function init() {
+      // Check companion is running first
+      const available = await isCompanionAvailable()
+      if (!available) {
+        setCompanionMissing(true)
+        setAutoLoading(false)
+        return
+      }
+
+      // Already activated in companion — skip to login
+      const existing = await getCompanionDevice()
+      if (existing?.token) {
+        router.replace('/login')
+        return
+      }
+
+      // Attempt silent auto-activation via env key
+      const { success, deviceName: name } = await tryAutoActivate()
+      setAutoLoading(false)
+      if (success && name) {
+        setDeviceName(name)
+        setDone(true)
+      }
     }
+    void init()
   }, [router])
 
   const handleKeyChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setKeyValue(formatKey(e.target.value))
   }
 
-  // Handle paste — strip formatting so the user can paste VP-XXXX-XXXX-XXXX directly
   const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
     e.preventDefault()
-    const pasted = e.clipboardData.getData('text')
-    setKeyValue(formatKey(pasted))
+    setKeyValue(formatKey(e.clipboardData.getData('text')))
   }
 
   const handleActivate = async (e: React.FormEvent) => {
@@ -63,12 +103,7 @@ export default function ActivatePage() {
     try {
       const res = await posApi.device.activate(keyValue)
       const { deviceToken, deviceId, deviceName: name, deviceType } = res.data.data
-
-      window.localStorage.setItem(DEVICE_TOKEN_KEY, deviceToken)
-      window.localStorage.setItem(DEVICE_ID_KEY, deviceId)
-      window.localStorage.setItem(DEVICE_NAME_KEY, name)
-      window.localStorage.setItem(DEVICE_TYPE_KEY, deviceType)
-
+      await saveToCompanion({ token: deviceToken, id: deviceId, name, type: deviceType })
       setDeviceName(name)
       setDone(true)
     } catch (err: any) {
@@ -79,7 +114,53 @@ export default function ActivatePage() {
     }
   }
 
-  /* ── Success screen ──────────────────────────────────────────────────────── */
+  // ── Companion not running ─────────────────────────────────────────────────
+  if (companionMissing) {
+    return (
+      <div className="min-h-full flex items-center justify-center bg-gray-950 px-4">
+        <div className="w-full max-w-sm text-center">
+          <p className="text-4xl font-black tracking-tight leading-none mb-8 select-none">
+            <span className="text-white">Venue</span><span className="text-blue-500">Plus</span>
+          </p>
+          <div className="bg-slate-900 border border-red-800/50 rounded-2xl p-8">
+            <div className="w-16 h-16 rounded-full bg-red-900/40 border-2 border-red-500/50 flex items-center justify-center mx-auto mb-4">
+              <svg className="w-8 h-8 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                  d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+              </svg>
+            </div>
+            <h2 className="text-xl font-bold text-white mb-2">Companion App Required</h2>
+            <p className="text-slate-400 text-sm mb-4">
+              The VenuePlus Companion app must be running on this machine to activate and license this terminal.
+            </p>
+            <p className="text-slate-500 text-xs">
+              Install and launch the VenuePlus Companion, then reload this page.
+            </p>
+            <button
+              onClick={() => window.location.reload()}
+              className="mt-6 w-full px-4 py-3 rounded-xl bg-slate-700 hover:bg-slate-600 text-white font-semibold transition-colors text-sm"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Auto-activating spinner ───────────────────────────────────────────────
+  if (autoLoading) {
+    return (
+      <div className="min-h-full flex items-center justify-center bg-gray-950">
+        <div className="text-center">
+          <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-slate-400 text-sm">Checking terminal license…</p>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Success screen ────────────────────────────────────────────────────────
   if (done) {
     return (
       <div className="min-h-full flex items-center justify-center bg-gray-950 px-4">
@@ -103,7 +184,7 @@ export default function ActivatePage() {
               onClick={() => router.push('/login')}
               className="w-full px-4 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold transition-colors"
             >
-              Sign In to POS →
+              Sign In →
             </button>
           </div>
           <p className="text-slate-500 text-xs mt-6" suppressHydrationWarning>
@@ -114,7 +195,7 @@ export default function ActivatePage() {
     )
   }
 
-  /* ── Activation form ─────────────────────────────────────────────────────── */
+  // ── Manual activation form ────────────────────────────────────────────────
   const complete = isComplete(keyValue)
 
   return (
@@ -133,7 +214,6 @@ export default function ActivatePage() {
         {/* Card */}
         <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6">
 
-          {/* Icon */}
           <div className="flex items-center justify-center mb-5">
             <div className="w-12 h-12 rounded-xl bg-blue-900/40 border border-blue-700/50 flex items-center justify-center">
               <svg className="w-6 h-6 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -151,8 +231,6 @@ export default function ActivatePage() {
           </p>
 
           <form onSubmit={handleActivate} className="space-y-5">
-
-            {/* Single formatted input */}
             <div>
               <label className="text-xs text-slate-400 uppercase tracking-wider mb-2 block">
                 License Key
@@ -164,7 +242,7 @@ export default function ActivatePage() {
                 autoCapitalize="characters"
                 autoCorrect="off"
                 spellCheck={false}
-                maxLength={19}  /* VP-XXXX-XXXX-XXXX = 19 chars */
+                maxLength={19}
                 placeholder="VP-XXXX-XXXX-XXXX"
                 value={keyValue}
                 onChange={handleKeyChange}
@@ -174,11 +252,8 @@ export default function ActivatePage() {
                            focus:outline-none focus:ring-2 focus:ring-blue-500
                            placeholder:text-slate-500 placeholder:tracking-widest"
               />
-              {/* Progress indicator */}
               <div className="flex items-center justify-between mt-2">
-                <p className="text-slate-500 text-xs">
-                  Format: VP-XXXX-XXXX-XXXX
-                </p>
+                <p className="text-slate-500 text-xs">Format: VP-XXXX-XXXX-XXXX</p>
                 <p className={`text-xs font-medium transition-colors ${complete ? 'text-green-400' : 'text-slate-500'}`}>
                   {keyValue.replace(/-/g, '').length}/14
                 </p>

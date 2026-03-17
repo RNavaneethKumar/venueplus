@@ -68,17 +68,28 @@ await app.register(corsPlugin, {
     const allowlist = env.CORS_ORIGINS.split(',').map((o) => o.trim())
     if (allowlist.includes(origin)) return callback(null, true)
 
-    // In development also allow any *.localhost origin so tenant subdomains
-    // (e.g. navaneeth.localhost:3001) work without listing every slug explicitly.
-    if (env.NODE_ENV !== 'production') {
-      try {
-        const { hostname } = new URL(origin)
+    try {
+      const { hostname } = new URL(origin)
+
+      // In development also allow any *.localhost origin so tenant subdomains
+      // (e.g. greenpark.localhost:3001) work without listing every slug explicitly.
+      if (env.NODE_ENV !== 'production') {
         if (hostname === 'localhost' || hostname.endsWith('.localhost')) {
           return callback(null, true)
         }
-      } catch {
-        // Malformed origin — fall through to reject
       }
+
+      // Multi-tenant: allow any subdomain of CORS_BASE_DOMAIN (e.g. "venueplus.io")
+      // so every tenant subdomain is automatically permitted without manual listing.
+      if (env.CORS_BASE_DOMAIN) {
+        const base = env.CORS_BASE_DOMAIN.toLowerCase()
+        const h    = hostname.toLowerCase()
+        if (h === base || h.endsWith(`.${base}`)) {
+          return callback(null, true)
+        }
+      }
+    } catch {
+      // Malformed origin — fall through to reject
     }
 
     callback(new Error(`Origin ${origin} not allowed by CORS`), false)

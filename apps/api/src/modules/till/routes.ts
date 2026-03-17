@@ -5,6 +5,7 @@ import {
   cashSessions,
   cashDrawers,
   cashMovements,
+  venueSettings,
   orders,
   orderPayments,
   users,
@@ -251,15 +252,16 @@ export async function tillRoutes(fastify: FastifyInstance): Promise<void> {
     '/sessions/active',
     { preHandler: [requireVenueHeader, requireStaff] },
     async (request, reply) => {
-    const db = resolveDb(request)
-      const venueId  = request.venueId!
-      const userId   = (request.user as any).staffId as string
-      const { drawerId } = request.query as { drawerId?: string }
+      const db      = resolveDb(request)
+      const venueId = request.venueId!
+      const userId  = (request.user as any).staffId as string
+      const { drawerId, deviceId } = request.query as { drawerId?: string; deviceId?: string }
 
       let session: typeof cashSessions.$inferSelect | undefined
 
       if (drawerId) {
-        // Counter mode lookup
+        // Explicit drawer lookup — used by TillOpenScreen when surfacing an
+        // already-open session after a TILL_ALREADY_OPEN conflict error.
         const [row] = await db
           .select()
           .from(cashSessions)
@@ -272,9 +274,76 @@ export async function tillRoutes(fastify: FastifyInstance): Promise<void> {
           )
           .limit(1)
         session = row
+
+      } else if (deviceId) {
+        // Automatic lookup on POS load — read pos.till_mode to decide strategy.
+        const [setting] = await db
+          .select({ value: venueSettings.settingValue })
+          .from(venueSettings)
+          .where(
+            and(
+              eq(venueSettings.venueId, venueId),
+              eq(venueSettings.settingKey, 'pos.till_mode')
+            )
+          )
+          .limit(1)
+
+        // May be stored as plain 'counter'/'user' or JSON-encoded '"counter"'/'"user"'.
+        let tillMode = 'counter'
+        if (setting) {
+          try { tillMode = JSON.parse(setting.value) } catch { tillMode = setting.value }
+        }
+
+        if (tillMode === 'counter') {
+          // Counter mode: find the drawer linked to this device, return its session.
+          // Any user logging in on the same terminal sees the same till.
+          // If the device has no linked drawer there is simply no session — do NOT
+          // fall back to a user-mode lookup.
+          const [drawer] = await db
+            .select({ id: cashDrawers.id })
+            .from(cashDrawers)
+            .where(
+              and(
+                eq(cashDrawers.venueId, venueId),
+                eq(cashDrawers.deviceId, deviceId)
+              )
+            )
+            .limit(1)
+
+          if (drawer) {
+            const [row] = await db
+              .select()
+              .from(cashSessions)
+              .where(
+                and(
+                  eq(cashSessions.venueId, venueId),
+                  eq(cashSessions.drawerId, drawer.id),
+                  eq(cashSessions.status, 'open')
+                )
+              )
+              .limit(1)
+            session = row
+          }
+          // No drawer linked to this device → session stays undefined → 404 below.
+        } else {
+          // User mode: look up by the logged-in user only, ignoring device.
+          const [row] = await db
+            .select()
+            .from(cashSessions)
+            .where(
+              and(
+                eq(cashSessions.venueId, venueId),
+                eq(cashSessions.openedBy, userId),
+                eq(cashSessions.status, 'open')
+              )
+            )
+            .limit(1)
+          session = row
+        }
+
       } else {
-        // User mode lookup — check counter session OR user-mode session
-        // First try counter sessions for any drawer in this venue that this user opened
+        // No deviceId provided (e.g. TillMenuSheet re-sync on mount):
+        // fall back to user-mode lookup.
         const [row] = await db
           .select()
           .from(cashSessions)
@@ -296,7 +365,7 @@ export async function tillRoutes(fastify: FastifyInstance): Promise<void> {
         })
       }
 
-      // Attach movements and live summary
+      // Attach movements
       const movements = await db
         .select()
         .from(cashMovements)
@@ -727,7 +796,7 @@ export async function tillRoutes(fastify: FastifyInstance): Promise<void> {
 
   fastify.post(
     '/drawers',
-    { preHandler: [requireVenueHeader, requireRole('venue_admin', 'super_admin')] },
+    { preHandler: [requireVenueHeader, requireRole('venue_admin', 'super_admin', 'manager')] },
     async (request, reply) => {
     const db = resolveDb(request)
       const venueId = request.venueId!
@@ -752,7 +821,7 @@ export async function tillRoutes(fastify: FastifyInstance): Promise<void> {
 
   fastify.patch<{ Params: { id: string } }>(
     '/drawers/:id',
-    { preHandler: [requireVenueHeader, requireRole('venue_admin', 'super_admin')] },
+    { preHandler: [requireVenueHeader, requireRole('venue_admin', 'super_admin', 'manager')] },
     async (request, reply) => {
     const db = resolveDb(request)
       const venueId = request.venueId!
@@ -760,7 +829,16 @@ export async function tillRoutes(fastify: FastifyInstance): Promise<void> {
         name:        z.string().min(1).max(100).optional(),
         description: z.string().max(200).optional(),
         isActive:    z.boolean().optional(),
+        deviceId:    z.string().uuid().nullable().optional(),
       }).parse(request.body)
+
+      // If linking a device, first clear any other drawer that already points to it
+      if (body.deviceId) {
+        await db
+          .update(cashDrawers)
+          .set({ deviceId: null })
+          .where(and(eq(cashDrawers.venueId, venueId), eq(cashDrawers.deviceId, body.deviceId)))
+      }
 
       const [updated] = await db
         .update(cashDrawers)

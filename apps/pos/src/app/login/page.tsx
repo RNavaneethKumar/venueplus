@@ -1,10 +1,11 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import toast from 'react-hot-toast'
 import { posApi, getTenantSlug } from '@/lib/api'
 import { usePosStore } from '@/store/posStore'
+import { getCompanionDevice } from '@/lib/companionApi'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -12,6 +13,12 @@ export default function LoginPage() {
   const [identifier, setIdentifier] = useState('')
   const [pin, setPin]               = useState('')
   const [loading, setLoading]       = useState(false)
+
+  // Device name from Companion
+  const [deviceName, setDeviceName] = useState<string | null>(null)
+  useEffect(() => {
+    getCompanionDevice().then((d) => setDeviceName(d?.name ?? null))
+  }, [])
 
   // Derive tenant info for display
   const tenantSlug = getTenantSlug()
@@ -45,11 +52,8 @@ export default function LoginPage() {
         roles,
         permissions: user.permissions ?? [],
       })
-      // Admin roles go straight to the admin panel (no device activation needed).
-      // POS-only roles go to / which will enforce device licensing.
-      const adminRoles = ['super_admin', 'venue_admin', 'manager']
-      const isAdmin = roles.some((r) => adminRoles.includes(r))
-      router.push(isAdmin ? '/admin' : '/')
+      // All roles land on the dashboard — the dashboard shows tiles based on permissions.
+      router.push('/')
     } catch (err: any) {
       toast.error(err.response?.data?.error?.message ?? 'Login failed')
     } finally {
@@ -69,6 +73,12 @@ export default function LoginPage() {
             <p className="text-slate-300 text-sm font-semibold">{tenantName}</p>
           ) : null}
           <p className="text-slate-400 text-sm mt-1">POS Terminal · Staff login</p>
+          {deviceName && (
+            <p className="text-slate-500 text-xs mt-1 flex items-center justify-center gap-1">
+              <span>🖥</span>
+              <span>{deviceName}</span>
+            </p>
+          )}
         </div>
 
         <form onSubmit={handleLogin} className="card space-y-4">

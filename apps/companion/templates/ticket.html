@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ticket</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  @page {
+    size: 210mm 99mm landscape;
+    margin: 0;
+  }
+
+  body {
+    width:  210mm;
+    height: 99mm;
+    font-family: 'Helvetica Neue', Arial, sans-serif;
+    color: #1a1a1a;
+    background: #fff;
+    overflow: hidden;
+  }
+
+  /* ── Outer wrapper ── */
+  .ticket {
+    display: flex;
+    width:  100%;
+    height: 100%;
+    border: 1.5px solid #1a1a1a;
+  }
+
+  /* ── Left panel (main info) ── */
+  .left-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    padding: 8mm 6mm 6mm 8mm;
+    border-right: none;
+    position: relative;
+  }
+
+  .venue-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 4mm;
+  }
+  .venue-name {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+    color: #1a1a1a;
+  }
+  .ticket-label {
+    font-size: 8px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #888;
+    border: 1px solid #ccc;
+    padding: 2px 5px;
+    border-radius: 3px;
+  }
+
+  .product-name {
+    font-size: 20px;
+    font-weight: 800;
+    line-height: 1.1;
+    color: #000;
+    margin-bottom: 1.5mm;
+    letter-spacing: -0.3px;
+  }
+  .visitor-type {
+    font-size: 11px;
+    color: #555;
+    margin-bottom: 4mm;
+    font-weight: 500;
+  }
+
+  /* Field rows */
+  .fields {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4mm 6mm;
+    margin-top: auto;
+  }
+  .field {
+    display: flex;
+    flex-direction: column;
+    min-width: 28mm;
+  }
+  .field-label {
+    font-size: 7px;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: #888;
+    margin-bottom: 1px;
+    font-weight: 600;
+  }
+  .field-value {
+    font-size: 11px;
+    font-weight: 700;
+    color: #1a1a1a;
+  }
+
+  /* ── Tear line ── */
+  .tear-line {
+    width: 6mm;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    flex-shrink: 0;
+  }
+  .tear-line::before {
+    content: '';
+    position: absolute;
+    top: -1.5px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 6mm;
+    height: 6mm;
+    background: #fff;
+    border-radius: 50%;
+    border: 1.5px solid #1a1a1a;
+    /* Notch cut-out at top */
+  }
+  .tear-line::after {
+    content: '';
+    position: absolute;
+    bottom: -1.5px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 6mm;
+    height: 6mm;
+    background: #fff;
+    border-radius: 50%;
+    border: 1.5px solid #1a1a1a;
+  }
+  .tear-line-inner {
+    width: 0;
+    height: 85mm;
+    border-left: 1.5px dashed #ccc;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+  }
+
+  /* ── Right panel (QR stub) ── */
+  .right-panel {
+    width: 54mm;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 5mm;
+    background: #f8f8f8;
+    gap: 3mm;
+  }
+
+  .qr-wrap {
+    width: 36mm;
+    height: 36mm;
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 3px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2mm;
+  }
+  .qr-wrap img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+
+  .ticket-number {
+    font-size: 8px;
+    font-weight: 700;
+    font-family: 'Courier New', monospace;
+    letter-spacing: 0.5px;
+    color: #333;
+    text-align: center;
+    word-break: break-all;
+  }
+
+  .scan-label {
+    font-size: 7px;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: #aaa;
+    font-weight: 600;
+  }
+</style>
+</head>
+<body>
+
+<div class="ticket">
+
+  <!-- Left panel: ticket info -->
+  <div class="left-panel">
+
+    <div class="venue-header">
+      <span class="venue-name">{{VENUE_NAME}}</span>
+      <span class="ticket-label">Admission Ticket</span>
+    </div>
+
+    <div class="product-name">{{PRODUCT_NAME}}</div>
+    <div class="visitor-type">{{VISITOR_TYPE}}</div>
+
+    <div class="fields">
+      <div class="field">
+        <span class="field-label">Date</span>
+        <span class="field-value">{{VISIT_DATE}}</span>
+      </div>
+      <div class="field">
+        <span class="field-label">Name</span>
+        <span class="field-value">{{HOLDER_NAME}}</span>
+      </div>
+      {{RESOURCE_FIELD}}
+      <div class="field">
+        <span class="field-label">Order</span>
+        <span class="field-value">{{ORDER_NUMBER}}</span>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Tear line -->
+  <div class="tear-line">
+    <div class="tear-line-inner"></div>
+  </div>
+
+  <!-- Right panel: QR code stub -->
+  <div class="right-panel">
+    <span class="scan-label">Scan to enter</span>
+    <div class="qr-wrap">
+      <img src="{{QR_DATA_URL}}" alt="QR Code">
+    </div>
+    <div class="ticket-number">{{TICKET_NUMBER}}</div>
+  </div>
+
+</div>
+
+</body>
+</html>

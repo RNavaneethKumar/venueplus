@@ -2,172 +2,235 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { usePosStore } from '@/store/posStore'
-import { type TillSession } from '@/store/posStore'
-import { posApi } from '@/lib/api'
-import ProductGrid from '@/components/pos/ProductGrid'
-import Cart from '@/components/pos/Cart'
-import Topbar from '@/components/pos/Topbar'
-import Tabs from '@/components/pos/Tabs'
-import QuickActionBar from '@/components/pos/QuickActionBar'
+import { getCompanionDevice } from '@/lib/companionApi'
 
-const DEVICE_TOKEN_KEY = 'venueplus_device_token'
-const HEARTBEAT_INTERVAL_MS = 60_000 // 1 minute
+// ─── Tile definitions ─────────────────────────────────────────────────────────
 
-export default function PosPage() {
+interface Tile {
+  id:          string
+  label:       string
+  description: string
+  href:        string
+  color:       string          // Tailwind colour token used for border + icon + badge
+  icon:        React.ReactNode
+  badge?:      string | undefined  // small label under the title, e.g. "Device not activated"
+}
+
+// ─── SVG icons ────────────────────────────────────────────────────────────────
+
+function IconPOS() {
+  return (
+    <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round"
+        d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-1.5 6h13M9 21a1 1 0 100-2 1 1 0 000 2zm10 0a1 1 0 100-2 1 1 0 000 2z" />
+    </svg>
+  )
+}
+
+function IconBackOffice() {
+  return (
+    <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round"
+        d="M3 7a2 2 0 012-2h14a2 2 0 012 2v10a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" />
+      <path strokeLinecap="round" strokeLinejoin="round"
+        d="M8 12h.01M12 12h.01M16 12h.01" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h18" />
+    </svg>
+  )
+}
+
+function IconReports() {
+  return (
+    <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round"
+        d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+    </svg>
+  )
+}
+
+// ─── Colour maps ─────────────────────────────────────────────────────────────
+
+const colorMap: Record<string, { border: string; icon: string; bg: string; btn: string }> = {
+  blue:   { border: 'border-blue-700/50',   icon: 'text-blue-400',   bg: 'bg-blue-900/20',   btn: 'bg-blue-600 hover:bg-blue-500' },
+  violet: { border: 'border-violet-700/50', icon: 'text-violet-400', bg: 'bg-violet-900/20', btn: 'bg-violet-600 hover:bg-violet-500' },
+  emerald:{ border: 'border-emerald-700/50',icon: 'text-emerald-400',bg: 'bg-emerald-900/20',btn: 'bg-emerald-600 hover:bg-emerald-500' },
+}
+
+// ─── Dashboard tile component ─────────────────────────────────────────────────
+
+function DashboardTile({ tile }: { tile: Tile }) {
+  const c = colorMap[tile.color] ?? colorMap['blue']!
+  return (
+    <Link
+      href={tile.href}
+      className={`group flex flex-col gap-5 p-6 rounded-2xl border ${c.border}
+                  bg-slate-900 hover:bg-slate-800/80 transition-all duration-200
+                  hover:shadow-lg hover:shadow-black/30 hover:-translate-y-0.5`}
+    >
+      {/* Icon */}
+      <div className={`w-14 h-14 rounded-xl ${c.bg} border ${c.border}
+                       flex items-center justify-center ${c.icon} shrink-0`}>
+        {tile.icon}
+      </div>
+
+      {/* Text */}
+      <div className="flex-1">
+        <p className="text-white font-semibold text-lg leading-tight">{tile.label}</p>
+        {tile.badge && (
+          <p className="text-xs text-amber-400 font-medium mt-0.5">{tile.badge}</p>
+        )}
+        <p className="text-slate-400 text-sm mt-1 leading-snug">{tile.description}</p>
+      </div>
+
+      {/* Arrow */}
+      <div className="flex items-center justify-end">
+        <span className={`text-xs font-semibold ${c.icon} flex items-center gap-1
+                          group-hover:gap-2 transition-all`}>
+          Open
+          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+          </svg>
+        </span>
+      </div>
+    </Link>
+  )
+}
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
+
+export default function DashboardPage() {
   const router = useRouter()
-  const { token, activeTab, setVenueConfig, setTillSession, cart, cartTotal, hasRole } = usePosStore()
-  const [products, setProducts] = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
-  const [cartDrawerOpen, setCartDrawerOpen] = useState(false)
+  const { token, staff, logout, hasRole, hasPermission } = usePosStore()
+  const [deviceActivated, setDeviceActivated] = useState(false)
 
-  // Periodic heartbeat — keeps device lastHeartbeatAt fresh in admin panel
+  // Auth guard — redirect to login if no token
   useEffect(() => {
-    if (!token) return
-    const deviceToken = typeof window !== 'undefined'
-      ? window.localStorage.getItem(DEVICE_TOKEN_KEY)
-      : null
-    if (!deviceToken) return
+    if (!token) router.replace('/login')
+  }, [token, router])
 
-    const sendHeartbeat = () => { posApi.device.heartbeat(deviceToken).catch(() => {}) }
-    sendHeartbeat() // immediate on mount
-    const id = setInterval(sendHeartbeat, HEARTBEAT_INTERVAL_MS)
-    return () => clearInterval(id)
-  }, [token])
-
-  // Guard: POS terminal must be licensed.
-  // Admin roles (super_admin, venue_admin, manager) are exempt — send them to /admin.
+  // Check if this terminal is activated in the Companion
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const deviceToken = window.localStorage.getItem(DEVICE_TOKEN_KEY)
-      if (!deviceToken) {
-        const exempt = hasRole('super_admin', 'venue_admin', 'manager')
-        router.replace(exempt ? '/admin' : '/activate')
-      }
-    }
-  }, [router, hasRole])
+    getCompanionDevice().then((d) => setDeviceActivated(Boolean(d?.token)))
+  }, [])
 
-  useEffect(() => {
-    if (!token) { router.push('/login'); return }
-    // Fetch venue config (not persisted — refresh each session)
-    posApi.venue.getPosConfig()
-      .then((res) => setVenueConfig(res.data.data))
-      .catch(() => { /* silently ignore — default is requireCustomer: false */ })
-    // Reload active till session (not persisted — check API each mount)
-    posApi.till.getActiveSession()
-      .then((res) => {
-        const s = res.data.data
-        setTillSession({
-          id:            s.id,
-          drawerId:      s.drawerId ?? null,
-          openedBy:      s.openedBy,
-          status:        s.status,
-          openTime:      s.openTime,
-          openingAmount: Number(s.openingAmount),
-          movements:     s.movements ?? [],
-        } satisfies TillSession)
-      })
-      .catch(() => setTillSession(null))
-    loadProducts()
-  }, [token, activeTab])
-
-  const loadProducts = async () => {
-    setLoading(true)
-    try {
-      const res = await posApi.products.list('pos')
-      const allProducts: any[] = res.data.data
-
-      const categoryMap: Record<string, string[]> = {
-        tickets:    ['ticket', 'add_on'],
-        fnb:        ['food_beverage'],
-        retail:     ['retail'],
-        wallet:     ['wallet_load', 'gift_card'],
-        membership: ['membership'],
-      }
-      setProducts(allProducts.filter((p) => (categoryMap[activeTab] ?? []).includes(p.productType)))
-    } catch {
-      setProducts([])
-    } finally {
-      setLoading(false)
-    }
+  if (!token || !staff) {
+    return (
+      <div className="h-full flex items-center justify-center bg-gray-950">
+        <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    )
   }
 
-  const itemCount = cart.reduce((n, i) => n + i.quantity, 0)
-  const total     = cartTotal()
+  // ── Role / permission checks ──────────────────────────────────────────────
+  const isAdmin      = hasRole('super_admin', 'venue_admin', 'manager')
+  const canReports   = isAdmin || hasPermission('report.financial') || hasPermission('report.operational')
+
+  // ── Build tile list based on role ─────────────────────────────────────────
+  const tiles: Tile[] = []
+
+  // POS Sales — everyone sees this; warn if device not activated
+  tiles.push({
+    id:          'pos',
+    label:       'POS Sales',
+    description: deviceActivated
+      ? 'Process tickets, F&B, retail and membership sales.'
+      : 'Activate this terminal to start processing sales.',
+    href:        deviceActivated ? '/pos' : '/activate',
+    color:       'blue',
+    icon:        <IconPOS />,
+    badge:       deviceActivated ? undefined : '⚠ Device not activated',
+  })
+
+  // Back Office — admin roles only
+  if (isAdmin) {
+    tiles.push({
+      id:          'admin',
+      label:       'Back Office',
+      description: 'Manage users, products, devices, venue settings and more.',
+      href:        '/admin',
+      color:       'violet',
+      icon:        <IconBackOffice />,
+    })
+  }
+
+  // Reports — admin or report permissions
+  if (canReports) {
+    tiles.push({
+      id:          'reports',
+      label:       'Reports',
+      description: 'Revenue summaries, sales breakdowns and operational reports.',
+      href:        '/reports',
+      color:       'emerald',
+      icon:        <IconReports />,
+    })
+  }
+
+  const handleLogout = () => {
+    logout()
+    if (typeof window !== 'undefined') window.localStorage.removeItem('pos_token')
+    router.push('/login')
+  }
 
   return (
-    <div className="h-full flex overflow-hidden bg-gray-950">
+    <div className="min-h-full bg-gray-950 flex flex-col">
 
-      {/* ── Left: product area ── */}
-      <div className="flex-1 flex flex-col overflow-hidden min-w-0 sm:border-r sm:border-slate-700">
-        <Topbar />
-        <Tabs />
+      {/* ── Top bar ── */}
+      <header className="flex items-center justify-between px-5 py-4 bg-slate-900 border-b border-slate-700 shrink-0">
+        <div className="flex items-center gap-3">
+          <span className="text-xl font-black tracking-tight select-none">
+            <span className="text-white">Venue</span><span className="text-blue-500">Plus</span>
+          </span>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="text-right hidden sm:block">
+            <p className="text-xs text-slate-400 leading-none">{staff.roles?.[0] ?? 'Staff'}</p>
+            <p className="text-sm font-semibold text-white leading-none mt-0.5">{staff.name}</p>
+          </div>
+          <div className="w-8 h-8 rounded-full bg-blue-700 flex items-center justify-center text-xs font-bold uppercase select-none text-white">
+            {staff.name?.[0] ?? '?'}
+          </div>
+          <button
+            onClick={handleLogout}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm text-slate-400
+                       hover:text-red-400 hover:bg-red-900/20 transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round"
+                d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+            </svg>
+            <span className="hidden sm:inline">Sign out</span>
+          </button>
+        </div>
+      </header>
 
-        {/* Scrollable product grid */}
-        <div className="flex-1 overflow-y-auto p-3 xl:p-4 pb-[136px] sm:pb-3">
-          {loading ? (
-            <div className="flex items-center justify-center h-40">
-              <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
-            </div>
-          ) : (
-            <ProductGrid products={products} />
-          )}
+      {/* ── Main content ── */}
+      <main className="flex-1 px-4 sm:px-6 lg:px-8 py-8 max-w-4xl mx-auto w-full">
+
+        {/* Greeting */}
+        <div className="mb-8">
+          <h1 className="text-2xl font-bold text-white">
+            Hello, {staff.name?.split(' ')[0]} 👋
+          </h1>
+          <p className="text-slate-400 text-sm mt-1">What would you like to do today?</p>
         </div>
 
-        {/* Quick action bar pinned to bottom of left column */}
-        <QuickActionBar />
-      </div>
+        {/* Tile grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {tiles.map((tile) => (
+            <DashboardTile key={tile.id} tile={tile} />
+          ))}
+        </div>
 
-      {/* ── Right: cart — desktop only ── */}
-      <div className="hidden sm:flex w-80 xl:w-96 flex-col shrink-0">
-        <Cart />
-      </div>
+      </main>
 
-      {/* ── Mobile: floating "View Cart" pill (above QuickActionBar ~72px) ── */}
-      {itemCount > 0 && (
-        <button
-          onClick={() => setCartDrawerOpen(true)}
-          className="sm:hidden fixed bottom-[76px] left-4 right-4 z-30
-                     flex items-center justify-between
-                     bg-blue-600 hover:bg-blue-500 active:bg-blue-700
-                     text-white rounded-2xl px-4 py-3 shadow-xl shadow-blue-950/70"
-        >
-          <span className="flex items-center gap-2.5 font-semibold">
-            <span className="bg-white/20 rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold shrink-0">
-              {itemCount}
-            </span>
-            View Cart
-          </span>
-          <span className="font-bold tabular-nums">₹{total.toFixed(2)}</span>
-        </button>
-      )}
-
-      {/* ── Mobile: Cart bottom-sheet drawer ── */}
-      {cartDrawerOpen && (
-        <>
-          {/* Backdrop */}
-          <div
-            className="sm:hidden fixed inset-0 z-40 bg-black/60 backdrop-blur-sm"
-            onClick={() => setCartDrawerOpen(false)}
-          />
-          {/* Drawer panel */}
-          <div className="sm:hidden fixed inset-x-0 bottom-0 z-50 flex flex-col rounded-t-3xl overflow-hidden bg-slate-900 shadow-2xl"
-               style={{ maxHeight: '85vh' }}>
-            {/* Drag handle row */}
-            <div className="relative flex items-center justify-center px-4 pt-3 pb-2 shrink-0">
-              <div className="w-10 h-1 bg-slate-600 rounded-full" />
-              <button
-                onClick={() => setCartDrawerOpen(false)}
-                className="absolute right-4 w-8 h-8 flex items-center justify-center rounded-full bg-slate-800 text-slate-400 hover:text-white active:bg-slate-700"
-              >✕</button>
-            </div>
-            {/* Cart content — scrollable */}
-            <div className="flex-1 overflow-y-auto min-h-0">
-              <Cart onClose={() => setCartDrawerOpen(false)} />
-            </div>
-          </div>
-        </>
-      )}
+      {/* ── Footer ── */}
+      <footer className="py-4 text-center">
+        <p className="text-slate-600 text-xs" suppressHydrationWarning>
+          VenuePlus © {new Date().getFullYear()}
+        </p>
+      </footer>
     </div>
   )
 }

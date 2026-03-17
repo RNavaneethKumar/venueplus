@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
 import { usePosStore } from '@/store/posStore'
 import { posApi } from '@/lib/api'
 import toast from 'react-hot-toast'
@@ -9,10 +8,11 @@ import clsx from 'clsx'
 import DateCalendar from './DateCalendar'
 import ManagerOverrideModal from './ManagerOverrideModal'
 import TillMenuSheet from './TillMenuSheet'
+import OrdersSheet from './OrdersSheet'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Sheet = 'date' | 'promo' | 'override' | 'confirmDateChange' | 'till' | null
+type Sheet = 'date' | 'promo' | 'override' | 'confirmDateChange' | 'till' | 'orders' | null
 
 interface OverridePending {
   productId: string
@@ -32,7 +32,6 @@ const fmtDate = (iso: string) =>
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function QuickActionBar() {
-  const router = useRouter()
   const {
     cart,
     clearCart,
@@ -43,14 +42,7 @@ export default function QuickActionBar() {
     applyPromo,
     overridePrice,
     tillSession,
-    hasRole,
-    hasPermission,
   } = usePosStore()
-
-  const canManage =
-    hasRole('manager', 'venue_admin', 'super_admin') ||
-    hasPermission('report.financial') ||
-    hasPermission('report.operational')
 
   const [sheet, setSheet]                     = useState<Sheet>(null)
   const [pendingDate, setPendingDate]         = useState<string | null>(null)
@@ -62,7 +54,6 @@ export default function QuickActionBar() {
   useEffect(() => { setMounted(true) }, [])
 
   // Use safe client-only values — fall back to neutral defaults during SSR
-  const safeCanManage   = mounted && canManage
   const safeTillSession = mounted ? tillSession : null
   const safeVisitDate   = mounted ? visitDate : todayIso()
 
@@ -155,12 +146,12 @@ export default function QuickActionBar() {
       onClick: () => setSheet('till'),
       dot:     safeTillSession ? 'green' : 'red',
     },
-    ...(safeCanManage ? [{
-      label:   'Admin',
-      icon:    '⚙️',
+    {
+      label:   'Orders',
+      icon:    '🧾',
       active:  false,
-      onClick: () => router.push('/admin'),
-    } satisfies BarButton] : []),
+      onClick: () => setSheet('orders'),
+    },
   ]
 
   return (
@@ -382,6 +373,11 @@ export default function QuickActionBar() {
       {/* Till Menu Sheet */}
       {sheet === 'till' && (
         <TillMenuSheet onClose={() => setSheet(null)} />
+      )}
+
+      {/* Orders Sheet */}
+      {sheet === 'orders' && (
+        <OrdersSheet onClose={() => setSheet(null)} />
       )}
     </>
   )

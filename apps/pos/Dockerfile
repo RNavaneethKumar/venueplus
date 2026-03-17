@@ -14,7 +14,7 @@
 
 # ── Base: Node 20 + pnpm ──────────────────────────────────────────────────────
 FROM node:20-alpine AS base
-RUN corepack enable && corepack prepare pnpm@9.14.4 --activate
+RUN corepack enable && corepack prepare pnpm@10.32.1 --activate
 
 
 # ── Stage 1: install dependencies ────────────────────────────────────────────
@@ -22,11 +22,15 @@ FROM base AS deps
 WORKDIR /app
 
 # Copy workspace manifests only — maximises Docker layer cache.
+# Note: we do NOT copy apps/api or packages/database manifests here.
+# pnpm --filter scopes the install to only @venueplus/pos and its dependency
+# tree, preventing API/database packages from being installed and potentially
+# being picked up by Next.js's file tracer during the standalone build.
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
-COPY packages/shared/package.json ./packages/shared/
-COPY apps/pos/package.json        ./apps/pos/
+COPY packages/shared/package.json   ./packages/shared/
+COPY apps/pos/package.json          ./apps/pos/
 
-RUN pnpm install --frozen-lockfile
+RUN pnpm install --frozen-lockfile --filter @venueplus/pos...
 
 
 # ── Stage 2: build ───────────────────────────────────────────────────────────

@@ -16,6 +16,7 @@ import clsx from 'clsx'
 import TillOpenScreen from './TillOpenScreen'
 import TillCloseScreen from './TillCloseScreen'
 import TillMovementSheet from './TillMovementSheet'
+import { getCompanionDevice, getDrawerId, setDrawerId, clearDrawerId } from '@/lib/companionApi'
 
 type View = 'menu' | 'open' | 'close' | 'movement'
 
@@ -46,6 +47,32 @@ export default function TillMenuSheet({ onClose }: Props) {
       .catch(() => {/* default to normal */})
   }, [])
 
+  // Defensive: re-sync with the API every time the sheet opens.
+  // The store may be stale (page refresh, session opened by another user on
+  // the same drawer, etc.).  A 404 is normal when there's no active session.
+  useEffect(() => {
+    Promise.all([getDrawerId(), getCompanionDevice()])
+      .then(([drawerId, device]) => {
+        const deviceId = device?.id ?? null
+        const params = drawerId ? { drawerId } : (deviceId ? { deviceId } : undefined)
+        return posApi.till.getActiveSession(params)
+      })
+      .then((res) => {
+        const s = res.data.data
+        setTillSession({
+          id:            s.id,
+          drawerId:      s.drawerId ?? null,
+          openedBy:      s.openedBy,
+          status:        s.status,
+          openTime:      s.openTime,
+          openingAmount: Number(s.openingAmount),
+          movements:     s.movements ?? [],
+        })
+      })
+      .catch(() => { /* 404 = no active session, keep view as 'open' */ })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []) // only on mount — setTillSession is stable
+
   // If session state changes from outside (e.g. order created), refresh view
   useEffect(() => {
     setView(tillSession ? 'menu' : 'open')
@@ -61,12 +88,16 @@ export default function TillMenuSheet({ onClose }: Props) {
       openingAmount: Number(session.openingAmount),
       movements:     [],
     })
+    // In counter mode the session has a drawerId — persist it so any user
+    // logging in on this terminal later can find the open session.
+    if (session.drawerId) void setDrawerId(session.drawerId)
     toast.success('Till opened successfully')
     setView('menu')
   }
 
   const handleSessionClosed = () => {
     setTillSession(null)
+    void clearDrawerId()
     toast.success('Till closed and Z-Report saved')
     onClose()
   }

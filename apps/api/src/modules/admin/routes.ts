@@ -1168,6 +1168,93 @@ export async function adminRoutes(fastify: FastifyInstance): Promise<void> {
     })
   })
 
+  /** GET /admin/reports/daily-trend?from=&to= — day-by-day revenue for line/bar charts */
+  fastify.get('/reports/daily-trend', { preHandler: adminGuard }, async (request, reply) => {
+    const db = resolveDb(request)
+    const venueId = request.venueId!
+    const { from, to } = request.query as { from?: string; to?: string }
+    const today = new Date().toISOString().slice(0, 10)
+    const dateFrom = from ?? today
+    const dateTo   = to   ?? today
+
+    const rows = await db.execute(
+      sql`SELECT
+        DATE(o.created_at)::text                                                                              AS date,
+        COUNT(DISTINCT o.id)::int                                                                             AS order_count,
+        COALESCE(SUM(o.total_amount) FILTER (WHERE o.status = 'paid'), 0)::numeric                           AS total_revenue,
+        COALESCE(SUM(o.total_amount) FILTER (WHERE o.source_channel = 'pos'    AND o.status = 'paid'), 0)::numeric AS pos_revenue,
+        COALESCE(SUM(o.total_amount) FILTER (WHERE o.source_channel = 'online' AND o.status = 'paid'), 0)::numeric AS online_revenue,
+        COALESCE(SUM(o.total_amount) FILTER (WHERE o.source_channel = 'kiosk'  AND o.status = 'paid'), 0)::numeric AS kiosk_revenue
+      FROM orders o
+      WHERE o.venue_id = ${venueId}
+        AND DATE(o.created_at) >= ${dateFrom}
+        AND DATE(o.created_at) <= ${dateTo}
+      GROUP BY DATE(o.created_at)
+      ORDER BY DATE(o.created_at)`
+    )
+
+    return reply.send({ success: true, data: { dateRange: { from: dateFrom, to: dateTo }, rows } })
+  })
+
+  /** GET /admin/reports/products?from=&to= — product performance table */
+  fastify.get('/reports/products', { preHandler: adminGuard }, async (request, reply) => {
+    const db = resolveDb(request)
+    const venueId = request.venueId!
+    const { from, to } = request.query as { from?: string; to?: string }
+    const today = new Date().toISOString().slice(0, 10)
+    const dateFrom = from ?? today
+    const dateTo   = to   ?? today
+
+    const rows = await db.execute(
+      sql`SELECT
+        p.id            AS product_id,
+        p.name          AS product_name,
+        p.product_type,
+        SUM(oi.quantity)::int                              AS units_sold,
+        COALESCE(SUM(oi.total_amount), 0)::numeric         AS revenue
+      FROM order_items oi
+      INNER JOIN products p ON oi.product_id = p.id
+      INNER JOIN orders   o ON oi.order_id   = o.id
+      WHERE o.venue_id = ${venueId}
+        AND o.status   = 'paid'
+        AND DATE(o.created_at) >= ${dateFrom}
+        AND DATE(o.created_at) <= ${dateTo}
+      GROUP BY p.id, p.name, p.product_type
+      ORDER BY revenue DESC`
+    )
+
+    return reply.send({ success: true, data: { dateRange: { from: dateFrom, to: dateTo }, rows } })
+  })
+
+  /** GET /admin/reports/visitor-types?from=&to= — visitor type breakdown */
+  fastify.get('/reports/visitor-types', { preHandler: adminGuard }, async (request, reply) => {
+    const db = resolveDb(request)
+    const venueId = request.venueId!
+    const { from, to } = request.query as { from?: string; to?: string }
+    const today = new Date().toISOString().slice(0, 10)
+    const dateFrom = from ?? today
+    const dateTo   = to   ?? today
+
+    const rows = await db.execute(
+      sql`SELECT
+        vt.id           AS visitor_type_id,
+        vt.name         AS visitor_type_name,
+        SUM(oi.quantity)::int                              AS units_sold,
+        COALESCE(SUM(oi.total_amount), 0)::numeric         AS revenue
+      FROM order_items oi
+      INNER JOIN visitor_types vt ON oi.visitor_type_id = vt.id
+      INNER JOIN orders        o  ON oi.order_id        = o.id
+      WHERE o.venue_id = ${venueId}
+        AND o.status   = 'paid'
+        AND DATE(o.created_at) >= ${dateFrom}
+        AND DATE(o.created_at) <= ${dateTo}
+      GROUP BY vt.id, vt.name
+      ORDER BY revenue DESC`
+    )
+
+    return reply.send({ success: true, data: { dateRange: { from: dateFrom, to: dateTo }, rows } })
+  })
+
   // ──────────────────────────────────────────────────────────────────────────
   // VENUE SETTINGS & FEATURE FLAGS (edit)
   // ──────────────────────────────────────────────────────────────────────────
