@@ -16,6 +16,7 @@
 //   greenpark.localhost:3000      → slug = "greenpark"   (localhost dev)
 //   localhost:3000                → slug from TENANT_SLUG or NEXT_PUBLIC_TENANT_SLUG
 //   127.0.0.1:3000                → slug from TENANT_SLUG or NEXT_PUBLIC_TENANT_SLUG
+//   venueplus.local:3001          → slug from TENANT_SLUG or NEXT_PUBLIC_TENANT_SLUG (.local = mDNS)
 // ============================================================================
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -45,24 +46,30 @@ export function middleware(request: NextRequest): NextResponse {
 function resolveTenantSlug(host: string): string {
   // Strip port
   const bare = host.split(':')[0] ?? ''
+  const fallback = process.env.TENANT_SLUG || process.env.NEXT_PUBLIC_TENANT_SLUG || ''
 
-  // Bare "localhost" or IPv4 — no subdomain
-  if (bare === 'localhost' || /^\d+\.\d+\.\d+\.\d+$/.test(bare)) {
-    // Runtime env var takes priority so the slug can be changed in docker-compose
-    // without rebuilding the image. Falls back to the build-time baked value.
-    return process.env.TENANT_SLUG || process.env.NEXT_PUBLIC_TENANT_SLUG || ''
+  // Raw IPv4 — no subdomain
+  if (/^\d+\.\d+\.\d+\.\d+$/.test(bare)) return fallback
+
+  // Plain "localhost" — no subdomain
+  if (bare === 'localhost') return fallback
+
+  const parts = bare.split('.')
+
+  // .local mDNS hostnames (Bonjour / Windows LAN) — always use env var
+  if (parts[parts.length - 1] === 'local') {
+    return fallback
   }
 
-  // Has at least one dot → extract everything before the first dot as slug
-  // Works for both:
-  //   greenpark.localhost        (dev)
-  //   greenpark.venueplus.io     (prod)
+  // Everything else — extract first segment as subdomain slug:
+  //   greenpark.localhost     → "greenpark"
+  //   greenpark.venueplus.io  → "greenpark"
   const dotIndex = bare.indexOf('.')
   if (dotIndex > 0) {
     return bare.substring(0, dotIndex)
   }
 
-  return process.env.TENANT_SLUG || process.env.NEXT_PUBLIC_TENANT_SLUG || ''
+  return fallback
 }
 
 // Apply to all routes except Next.js internals and static assets

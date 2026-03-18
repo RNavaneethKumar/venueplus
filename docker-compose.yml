@@ -32,11 +32,11 @@ services:
       JWT_SECRET: 6fafbb696d3704d687a61a3bbc63a05dff465269bb10d859ebab7443581a12cb
       JWT_EXPIRES_IN: 7d
       GLOBAL_ADMIN_SEED_SECRET: 1134434c30466bea41074b409ed1d0a9
-      CORS_ORIGINS: http://localhost:3001
+      CORS_ORIGINS: http://localhost:3001,http://venueplus.local:3001
       # Allows *.localhost for local Docker testing (e.g. demo.localhost:3001).
       # When deploying to production change this to your real base domain:
       #   CORS_BASE_DOMAIN: venueplus.in
-      CORS_BASE_DOMAIN: localhost
+      CORS_BASE_DOMAIN: venueplus.local
       SMS_PROVIDER: console
       EMAIL_PROVIDER: console
       FROM_EMAIL: noreply@venueplus.io
