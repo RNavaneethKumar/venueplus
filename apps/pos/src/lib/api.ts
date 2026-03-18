@@ -28,7 +28,9 @@ export function getTenantSlug(): string {
   const parts    = hostname.split('.')
 
   // Subdomain present → extract directly (e.g. "greenpark.venueplus.io")
-  if (parts.length >= 2 && hostname !== 'localhost' && !/^\d+\.\d+\.\d+\.\d+$/.test(hostname)) {
+  // Exclude .local mDNS hostnames — they are plain LAN hostnames, not subdomained
+  const tld = parts[parts.length - 1]
+  if (parts.length >= 2 && hostname !== 'localhost' && tld !== 'local' && !/^\d+\.\d+\.\d+\.\d+$/.test(hostname)) {
     return parts[0] ?? ''
   }
 

@@ -21,7 +21,7 @@ services:
     build:
       context: .
       dockerfile: apps/api/Dockerfile
-    image: venueplus-api:latest
+    image: rnavaneethkumar/venueplus-api:latest
     restart: unless-stopped
     ports:
       - "${API_PORT:-4000}:4000"
@@ -84,7 +84,7 @@ services:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:4000/api/v1}
         NEXT_PUBLIC_VENUE_ID: ${NEXT_PUBLIC_VENUE_ID:-}
         NEXT_PUBLIC_TENANT_SLUG: ${NEXT_PUBLIC_TENANT_SLUG:-}
-    image: venueplus-pos:latest
+    image: rnavaneethkumar/venueplus-pos:latest
     restart: unless-stopped
     ports:
       - "${POS_PORT:-3001}:3001"
