@@ -118,7 +118,7 @@ export default function QuickActionBar() {
 
   // ── Bar buttons ───────────────────────────────────────────────────────────
 
-  type BarButton = { label: string; icon: string; active?: boolean; onClick: () => void; dot?: 'green' | 'red' }
+  type BarButton = { label: string; icon: string; active?: boolean; onClick: () => void; dot?: 'green' | 'red'; color?: 'amber' }
 
   const buttons: BarButton[] = [
     {
@@ -135,8 +135,9 @@ export default function QuickActionBar() {
     },
     {
       label:   'Override',
-      icon:    '💲',
+      icon:    '$',
       active:  false,
+      color:   'amber',
       onClick: () => cart.length > 0 ? setSheet('override') : toast('Add items to cart first', { icon: 'ℹ️' }),
     },
     {
@@ -166,10 +167,12 @@ export default function QuickActionBar() {
               'flex-1 relative flex flex-col items-center justify-center py-2 px-1 rounded-xl text-xs font-medium transition-colors min-h-[52px]',
               btn.active
                 ? 'bg-blue-600/20 border border-blue-500/50 text-blue-300'
+                : btn.color === 'amber'
+                ? 'bg-slate-800 hover:bg-slate-700 active:bg-slate-600'
                 : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white active:bg-slate-600'
             )}
           >
-            <span className="text-base mb-0.5 relative">
+            <span className={clsx('mb-0.5 relative', btn.color === 'amber' ? 'text-lg font-bold text-amber-400' : 'text-base')}>
               {btn.icon}
               {btn.dot && (
                 <span className={clsx(
@@ -178,7 +181,7 @@ export default function QuickActionBar() {
                 )} />
               )}
             </span>
-            <span className="truncate max-w-full px-1">{btn.label}</span>
+            <span className={clsx('truncate max-w-full px-1', btn.color === 'amber' ? 'text-white' : '')}>{btn.label}</span>
           </button>
         ))}
       </div>

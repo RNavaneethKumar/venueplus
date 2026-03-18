@@ -17,6 +17,9 @@ import {
   promoCodes,
   promoCodeUsages,
   cashSessions,
+  products,
+  visitorTypes,
+  accounts,
   eq,
   and,
   or,
@@ -25,6 +28,7 @@ import {
   lte,
   isNull,
   ilike,
+  asc,
   sql,
   type DB,
 } from '@venueplus/database'
@@ -459,16 +463,21 @@ export async function orderRoutes(fastify: FastifyInstance): Promise<void> {
 
   /**
    * GET /api/v1/orders/:id
+   * Returns enriched order detail (items with product/visitor-type names,
+   * payments, status history, customer) accessible to all authenticated POS staff.
    */
   fastify.get<{ Params: { id: string } }>(
     '/:id',
     { preHandler: [requireVenueHeader] },
     async (request, reply) => {
-    const db = resolveDb(request)
-      const order = await db.query.orders.findFirst({
-        where: eq(orders.id, request.params.id),
-        with: { items: true, payments: true, statusHistory: true },
-      })
+      const db = resolveDb(request)
+      const { id } = request.params
+
+      const [order] = await db
+        .select()
+        .from(orders)
+        .where(eq(orders.id, id))
+        .limit(1)
 
       if (!order) {
         return reply.status(HTTP_STATUS.NOT_FOUND).send({
@@ -477,7 +486,67 @@ export async function orderRoutes(fastify: FastifyInstance): Promise<void> {
         })
       }
 
-      return reply.send({ success: true, data: order })
+      // Items enriched with product name, code, type and visitor type name
+      const itemRows = await db
+        .select({
+          id:              orderItems.id,
+          productId:       orderItems.productId,
+          productName:     products.name,
+          productCode:     products.code,
+          productType:     products.productType,
+          visitorTypeId:   orderItems.visitorTypeId,
+          visitorTypeName: visitorTypes.name,
+          quantity:        orderItems.quantity,
+          unitPrice:       orderItems.unitPrice,
+          discountAmount:  orderItems.discountAmount,
+          taxAmount:       orderItems.taxAmount,
+          totalAmount:     orderItems.totalAmount,
+          priceOverridden: orderItems.priceOverridden,
+        })
+        .from(orderItems)
+        .innerJoin(products, eq(orderItems.productId, products.id))
+        .leftJoin(visitorTypes, eq(orderItems.visitorTypeId, visitorTypes.id))
+        .where(eq(orderItems.orderId, id))
+
+      // Payments ordered chronologically
+      const paymentRows = await db
+        .select()
+        .from(orderPayments)
+        .where(eq(orderPayments.orderId, id))
+        .orderBy(asc(orderPayments.createdAt))
+
+      // Status history ordered chronologically
+      const historyRows = await db
+        .select()
+        .from(orderStatusHistory)
+        .where(eq(orderStatusHistory.orderId, id))
+        .orderBy(asc(orderStatusHistory.changedAt))
+
+      // Customer (if linked)
+      let customer = null
+      if (order.accountId) {
+        const [acct] = await db
+          .select({
+            id:            accounts.id,
+            displayName:   accounts.displayName,
+            email:         accounts.email,
+            mobileNumber:  accounts.mobileNumber,
+          })
+          .from(accounts)
+          .where(eq(accounts.id, order.accountId))
+        customer = acct ?? null
+      }
+
+      return reply.send({
+        success: true,
+        data: {
+          ...order,
+          customer,
+          orderItems:    itemRows,
+          orderPayments: paymentRows,
+          statusHistory: historyRows,
+        },
+      })
     }
   )
 

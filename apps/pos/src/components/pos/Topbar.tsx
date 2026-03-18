@@ -68,10 +68,25 @@ export default function Topbar() {
         </span>
       </div>
 
-      {/* Right: staff dropdown */}
-      <div className="flex items-center gap-4">
+      {/* Right: customer display + staff dropdown */}
+      <div className="flex items-center gap-2">
+
+        {/* Customer Display — opens the customer-facing cart view in a new window */}
+        <button
+          onClick={() => window.open('/pos/display', '_blank', 'noopener,noreferrer')}
+          title="Open Customer Display"
+          className="w-8 h-8 flex items-center justify-center rounded-lg
+                     text-slate-400 hover:text-white hover:bg-slate-700
+                     active:bg-slate-600 transition-colors shrink-0"
+        >
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round"
+              d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+          </svg>
+        </button>
+
         {/* Staff name — click to open dropdown */}
-        <div className="relative" ref={dropdownRef}>
+        <div className="relative ml-2" ref={dropdownRef}>
           <button
             onClick={() => setDropdownOpen((o) => !o)}
             className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 active:bg-slate-600 transition-colors text-sm"

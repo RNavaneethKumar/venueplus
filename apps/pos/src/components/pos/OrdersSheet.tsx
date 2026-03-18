@@ -204,7 +204,7 @@ export default function OrdersSheet({ onClose }: Props) {
     setShowRefundPanel(false)
     setRefundError('')
     try {
-      const res = await posApi.admin.getOrder(orderId)
+      const res = await posApi.orders.get(orderId)
       setDetail(res.data.data)
     } catch {
       toast.error('Failed to load order details')
