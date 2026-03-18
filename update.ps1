@@ -1,4 +1,4 @@
-# VenuePlus — Update to latest images
+# VenuePlus - Update to latest images
 # Usage: .\update.ps1
 
 Write-Host ""

@@ -1,4 +1,4 @@
-# VenuePlus — Stop
+# VenuePlus - Stop
 # Usage: .\stop.ps1
 
 Write-Host ""

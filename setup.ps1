@@ -1,7 +1,7 @@
-# =============================================================================
-# VenuePlus — First-time Setup
-# Run once as Administrator: Right-click → "Run with PowerShell as Administrator"
-# =============================================================================
+# ==============================================================================
+# VenuePlus - First-time Setup
+# Run once as Administrator: Right-click -> "Run with PowerShell as Administrator"
+# ==============================================================================
 
 #Requires -RunAsAdministrator
 
@@ -17,7 +17,7 @@ Write-Host "============================================" -ForegroundColor Cyan
 Write-Host "   VenuePlus Setup for Windows" -ForegroundColor Cyan
 Write-Host "============================================" -ForegroundColor Cyan
 
-# ── 1. Check Docker ──────────────────────────────────────────────────────────
+# -- 1. Check Docker -----------------------------------------------------------
 
 Write-Step "Checking Docker..."
 
@@ -36,7 +36,7 @@ if ($LASTEXITCODE -ne 0) {
 
 Write-OK "Docker is ready."
 
-# ── 2. Add venueplus.local to hosts file ─────────────────────────────────────
+# -- 2. Add venueplus.local to hosts file --------------------------------------
 
 Write-Step "Configuring venueplus.local hostname..."
 
@@ -44,13 +44,13 @@ $hostsPath = "C:\Windows\System32\drivers\etc\hosts"
 $hostsContent = Get-Content $hostsPath -Raw
 
 if ($hostsContent -match "venueplus\.local") {
-    Write-Warn "venueplus.local already in hosts file — skipping."
+    Write-Warn "venueplus.local already in hosts file - skipping."
 } else {
     Add-Content $hostsPath "`r`n127.0.0.1`tvenueplus.local"
-    Write-OK "Added venueplus.local → 127.0.0.1."
+    Write-OK "Added venueplus.local -> 127.0.0.1."
 }
 
-# ── 3. Pull latest images ─────────────────────────────────────────────────────
+# -- 3. Pull latest images -----------------------------------------------------
 
 Write-Step "Pulling latest VenuePlus images from Docker Hub..."
 
@@ -62,7 +62,7 @@ if ($LASTEXITCODE -ne 0) {
 
 Write-OK "Images pulled."
 
-# ── 4. Start services ────────────────────────────────────────────────────────
+# -- 4. Start services ---------------------------------------------------------
 
 Write-Step "Starting VenuePlus..."
 
@@ -72,7 +72,7 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
-# ── 5. Wait for API health check ─────────────────────────────────────────────
+# -- 5. Wait for API health check ----------------------------------------------
 
 Write-Step "Waiting for API to be ready..."
 
@@ -94,10 +94,10 @@ while ($attempt -lt $maxAttempts -and -not $ready) {
 if ($ready) {
     Write-OK "API is healthy."
 } else {
-    Write-Warn "API health check timed out — it may still be starting up. Check with: docker compose logs api"
+    Write-Warn "API health check timed out - it may still be starting. Check with: docker compose logs api"
 }
 
-# ── Done ─────────────────────────────────────────────────────────────────────
+# -- Done ----------------------------------------------------------------------
 
 Write-Host ""
 Write-Host "============================================" -ForegroundColor Green
@@ -112,6 +112,6 @@ Write-Host "     Start  ->  .\start.ps1" -ForegroundColor Gray
 Write-Host "     Stop   ->  .\stop.ps1" -ForegroundColor Gray
 Write-Host "     Update ->  .\update.ps1" -ForegroundColor Gray
 Write-Host ""
-Write-Host "   NOTE: For tablets/phones on the same WiFi to access" -ForegroundColor Yellow
-Write-Host "   the POS, run rebuild.ps1 once (takes ~5 min)." -ForegroundColor Yellow
+Write-Host "   NOTE: For tablets/phones on the same WiFi," -ForegroundColor Yellow
+Write-Host "   run rebuild.ps1 once (takes ~5 min)." -ForegroundColor Yellow
 Write-Host ""

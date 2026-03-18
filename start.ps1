@@ -1,4 +1,4 @@
-# VenuePlus — Start
+# VenuePlus - Start
 # Usage: .\start.ps1
 
 Write-Host ""
